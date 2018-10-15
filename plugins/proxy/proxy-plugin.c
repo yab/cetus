@@ -339,6 +339,7 @@ proxy_c_read_query_result(network_mysqld_con *con)
                  * make sure we send only one result-set per client-query
                  */
             if (!con->is_changed_user_failed) {
+                g_debug("%s: move recv queue to send queue", G_STRLOC);
                 GString *packet;
                 while ((packet = g_queue_pop_head(recv_sock->recv_queue->chunks)) != NULL) {
                     network_mysqld_queue_append_raw(send_sock, send_sock->send_queue, packet);

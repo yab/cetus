@@ -3601,15 +3601,15 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server)
     }
 
 
-    if (server->do_compress) {
+    if (!server->do_compress) {
+        ret = network_mysqld_con_get_packet(chas, server);
+    } else {
         ret = network_mysqld_con_get_uncompressed_packet(chas, server);
         if (ret != NETWORK_SOCKET_SUCCESS) {
             if (server->recv_queue_uncompress_raw->len == 0) {
                 return ret;
             }
         }
-    } else {
-        ret = network_mysqld_con_get_packet(chas, server);
     }
 
     while (ret == NETWORK_SOCKET_SUCCESS) {
@@ -3620,7 +3620,6 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server)
         packet.data = chunk->data;
         packet.offset = 0;
 
-        con->server = server;
         int is_finished = network_mysqld_proto_get_query_result(&packet, con);
         if (is_finished == 1) {
             g_debug("%s:packets read finished, default db:%s, server db:%s",
@@ -3665,17 +3664,18 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
      * depending on the backend we may forward the data 
      * to the client right away
      */
+    network_socket *recv_sock;
+
+    recv_sock = con->server;
+
+    if (recv_sock == NULL) {
+        con->prev_state = con->state;
+        con->state = ST_ERROR;
+        return DISP_CONTINUE;
+    }
+
     do {
-        network_socket *recv_sock;
-
-        recv_sock = con->server;
-
-        if (recv_sock == NULL) {
-            con->prev_state = con->state;
-            con->state = ST_ERROR;
-            return DISP_CONTINUE;
-        }
-
+        g_debug("%s: call network_mysqld_read_rw_resp:%d", G_STRLOC, (int)recv_sock->resp_len);
 
         if (srv->query_cache_enabled && recv_sock->to_read > 0) {
             g_debug("%s: check if query can be cached", G_STRLOC);
