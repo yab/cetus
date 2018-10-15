@@ -1459,6 +1459,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_read_query)
     network_mysqld_stmt_ret ret;
 
     con->resp_too_long = 0;
+    con->last_warning_met = 0;
 
     network_mysqld_con_reset_query_state(con);
 
