@@ -3245,7 +3245,6 @@ disp_result_not_reserved(network_mysqld_con *con)
     }
 
     g_debug("%s:set send result to client", G_STRLOC);
-    con->resultset_is_finished = TRUE;
     con->state = ST_SEND_QUERY_RESULT;
 }
 
@@ -3492,16 +3491,6 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
         return DISP_CONTINUE;
     }
 
-    /* 
-     * in case we havn't read the full resultset 
-     * from the server yet, 
-     * go back and read more
-     */
-    if (!con->resultset_is_finished && con->server) {
-        con->state = ST_READ_QUERY_RESULT;
-        return DISP_CONTINUE;
-    }
-
     switch (plugin_call(srv, con, con->state)) {
     case NETWORK_SOCKET_SUCCESS:
         break;
@@ -3555,15 +3544,13 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
         }
     }
 
-    if (con->resultset_is_finished) {
-        con->client->update_time = srv->current_time;
-        if (!con->client->is_server_conn_reserved) {
-            con->client->is_need_q_peek_exec = 1;
-            g_debug("%s: set is_need_q_peek_exec true, state:%d", G_STRLOC, con->state);
-        } else {
-            con->client->is_need_q_peek_exec = 0;
-            g_debug("%s: set is_need_q_peek_exec false", G_STRLOC);
-        }
+    con->client->update_time = srv->current_time;
+    if (con->server && !con->client->is_server_conn_reserved) {
+        con->client->is_need_q_peek_exec = 1;
+        g_debug("%s: set is_need_q_peek_exec true, state:%d", G_STRLOC, con->state);
+    } else {
+        con->client->is_need_q_peek_exec = 0;
+        g_debug("%s: set is_need_q_peek_exec false", G_STRLOC);
     }
 
     if (con->slave_conn_shortaged) {
@@ -3577,6 +3564,95 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
     }
 
     return DISP_CONTINUE;
+}
+
+network_socket_retval_t
+network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server)
+{
+    chassis *chas = con->srv;
+
+    int read_len = server->to_read;
+
+    network_socket_retval_t ret = network_socket_read(server);
+    switch (ret) {
+    case NETWORK_SOCKET_WAIT_FOR_EVENT:
+        return NETWORK_SOCKET_WAIT_FOR_EVENT;
+    case NETWORK_SOCKET_ERROR:
+        return NETWORK_SOCKET_ERROR;
+    case NETWORK_SOCKET_SUCCESS:
+        break;
+    case NETWORK_SOCKET_ERROR_RETRY:
+        g_error("NETWORK_SOCKET_ERROR_RETRY wasn't expected");
+        break;
+    }
+
+    server->resp_len += read_len;
+
+    if (server->resp_len > con->srv->max_resp_len) {
+        network_queue_clear(con->server->recv_queue);
+        network_mysqld_queue_reset(con->server);
+        g_message("%s: resp too long:%p, src port:%s, sql:%s",
+                G_STRLOC, con, server->src->name->str, con->orig_sql->str);
+        network_mysqld_con_send_error_full(con->client,
+                C("response too long for proxy"), ER_CETUS_LONG_RESP, "HY000");
+        con->server_to_be_closed = 1;
+        con->resp_too_long = 1;
+        return ret;
+    }
+
+
+    if (server->do_compress) {
+        ret = network_mysqld_con_get_uncompressed_packet(chas, server);
+        if (ret != NETWORK_SOCKET_SUCCESS) {
+            if (server->recv_queue_uncompress_raw->len == 0) {
+                return ret;
+            }
+        }
+    } else {
+        ret = network_mysqld_con_get_packet(chas, server);
+    }
+
+    while (ret == NETWORK_SOCKET_SUCCESS) {
+        network_packet packet;
+        GList *chunk;
+
+        chunk = server->recv_queue->chunks->tail;
+        packet.data = chunk->data;
+        packet.offset = 0;
+
+        con->server = server;
+        int is_finished = network_mysqld_proto_get_query_result(&packet, con);
+        if (is_finished == 1) {
+            g_debug("%s:packets read finished, default db:%s, server db:%s",
+                    G_STRLOC, con->client->default_db->str, server->default_db->str);
+            if (con->parse.command == COM_QUERY) {
+                network_mysqld_com_query_result_t *query = con->parse.data;
+                if (query && query->query_status == MYSQLD_PACKET_ERR) {
+                    disp_err_packet(con, &packet);
+                }
+
+                if (query->warning_count > 0) {
+                    g_debug("%s warning flag from server:%s is met:%s",
+                              G_STRLOC, server->dst->name->str, con->orig_sql->str);
+                    con->last_warning_met = 1;
+                }
+            }
+            break;
+        }
+
+        ret = network_mysqld_con_get_packet(chas, server);
+
+        if (ret == NETWORK_SOCKET_WAIT_FOR_EVENT) {
+            if (server->do_compress) {
+                ret = network_mysqld_con_get_uncompressed_packet(chas, server);
+                if (ret != NETWORK_SOCKET_SUCCESS) {
+                    break;
+                }
+            }
+        }
+    }
+
+    return ret;
 }
 
 static int
@@ -3600,9 +3676,8 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
             return DISP_CONTINUE;
         }
 
-        int read_len = recv_sock->to_read;
 
-        if (srv->query_cache_enabled && read_len > 0) {
+        if (srv->query_cache_enabled && recv_sock->to_read > 0) {
             g_debug("%s: check if query can be cached", G_STRLOC);
             proxy_plugin_con_t *st = con->plugin_con_state;
             if (con->is_read_ro_server_allowed && st->injected.queries->length == 0) {
@@ -3612,20 +3687,8 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
             }
         }
 
-        switch (network_mysqld_read(srv, recv_sock)) {
+        switch (network_mysqld_read_rw_resp(con, recv_sock)) {
         case NETWORK_SOCKET_SUCCESS:
-            recv_sock->resp_len += read_len;
-            if (recv_sock->resp_len > con->srv->max_resp_len) {
-                network_queue_clear(con->server->recv_queue);
-                network_mysqld_queue_reset(con->server);
-                g_message("%s: resp too long:%p, src port:%s, sql:%s",
-                          G_STRLOC, con, recv_sock->src->name->str, con->orig_sql->str);
-                network_mysqld_con_send_error_full(con->client,
-                                                   C("response too long for proxy"), ER_CETUS_LONG_RESP, "HY000");
-                con->server_to_be_closed = 1;
-                con->resultset_is_finished = TRUE;
-                con->resp_too_long = 1;
-            }
             break;
         case NETWORK_SOCKET_WAIT_FOR_EVENT:
             timeout = con->read_timeout;
@@ -3654,7 +3717,7 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
              * if we don't need the resultset, 
              * forward it to the client
              */
-            if (!con->resultset_is_finished && !con->resultset_is_needed) {
+            if (!con->resultset_is_needed) {
                 if (con->client->send_queue->len > 65536) {
                     con->state = ST_SEND_QUERY_RESULT;
                     g_warning("%s: send queue len is too big for sock:%p", G_STRLOC, con->client);
@@ -3755,8 +3818,6 @@ process_read_event(network_mysqld_con *con, int event_fd)
             network_mysqld_con_send_error_full(con->client, C("server closed prematurely"), ER_CETUS_UNKNOWN, "HY000");
             con->server_to_be_closed = 1;
             con->server_closed = 1;
-            con->resultset_is_finished = TRUE;
-
             con->state = ST_SEND_QUERY_RESULT;
         }
     }

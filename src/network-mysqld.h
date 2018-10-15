@@ -612,10 +612,6 @@ struct network_mysqld_con {
      * even before the full resultset is parsed.
      */
     gboolean resultset_is_needed;
-    /**
-     * Flag indicating whether we have seen all parts belonging to one resultset.
-     */
-    gboolean resultset_is_finished;
 
     /**
      * Flag indicating that we have received a COM_QUIT command.

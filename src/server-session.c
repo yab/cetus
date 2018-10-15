@@ -343,7 +343,6 @@ process_read_server(network_mysqld_con *con, server_session_t *ss)
                 network_mysqld_con_send_error_full(con->client,
                                                    C("response too long for proxy"), ER_CETUS_LONG_RESP, "HY000");
                 con->state = ST_SEND_QUERY_RESULT;
-                con->resultset_is_finished = TRUE;
                 network_mysqld_con_handle(-1, 0, con);
                 return 0;
             }

@@ -1632,7 +1632,6 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_read_query)
         }
 
         con->state = ST_SEND_QUERY_RESULT;
-        con->resultset_is_finished = TRUE;  /* we don't have more too send */
     }
 
     return NETWORK_SOCKET_SUCCESS;
@@ -1805,7 +1804,6 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_send_query_result)
  */
 NETWORK_MYSQLD_PLUGIN_PROTO(proxy_read_query_result)
 {
-    int is_finished = 0;
     network_packet packet;
     network_socket *recv_sock, *send_sock;
     proxy_plugin_con_t *st = con->plugin_con_state;
@@ -1824,13 +1822,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_read_query_result)
 
     g_debug("%s: here we visit network_mysqld_proto_get_query_result for con:%p", G_STRLOC, con);
 
-    if (con->resp_too_long) {
-        is_finished = 1;
-    } else {
-        is_finished = network_mysqld_proto_get_query_result(&packet, con);
-    }
-
-    if (!con->resp_too_long && is_finished == 1) {
+    if (!con->resp_too_long) {
         /* TODO if attribute adjustment fails, then the backend connection should not be put to pool */
         switch (con->parse.command) {
         case COM_QUERY:
@@ -1868,96 +1860,81 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_read_query_result)
         default:
             break;
         }
-    } else if (is_finished == -1) {
-        g_debug("%s: is_finished -1: %p", G_STRLOC, con);
-        /* something happened, let's get out of here */
-        return NETWORK_SOCKET_ERROR;
     }
 
-    con->resultset_is_finished = is_finished;
+    network_mysqld_stmt_ret ret;
 
-    /* copy the packet over to the send-queue if we don't need it */
-    if (!con->resultset_is_needed) {
-        network_mysqld_queue_append_raw(send_sock, send_sock->send_queue,
-                                        g_queue_pop_tail(recv_sock->recv_queue->chunks));
-    }
+    /**
+     * the resultset handler might decide to trash the send-queue
+     *
+     */
 
-    if (is_finished) {
-        g_debug("%s: resultset_is_finished finished: %p", G_STRLOC, con);
-        network_mysqld_stmt_ret ret;
-
-        /**
-         * the resultset handler might decide to trash the send-queue
-         *
-         */
-
-        if (inj) {
-            switch (con->parse.command) {
+    if (inj) {
+        switch (con->parse.command) {
             case COM_QUERY:
             case COM_STMT_EXECUTE:
-            {
-                network_mysqld_com_query_result_t *com_query = con->parse.data;
+                {
+                    network_mysqld_com_query_result_t *com_query = con->parse.data;
 
-                inj->bytes = com_query->bytes;
-                inj->rows = com_query->rows;
-                inj->qstat.was_resultset = com_query->was_resultset;
-                inj->qstat.binary_encoded = com_query->binary_encoded;
+                    inj->bytes = com_query->bytes;
+                    inj->rows = com_query->rows;
+                    inj->qstat.was_resultset = com_query->was_resultset;
+                    inj->qstat.binary_encoded = com_query->binary_encoded;
 
-                /* INSERTs have a affected_rows */
-                if (!com_query->was_resultset) {
-                    if (com_query->affected_rows > 0) {
-                        con->last_record_updated = 1;
+                    /* INSERTs have a affected_rows */
+                    if (!com_query->was_resultset) {
+                        if (com_query->affected_rows > 0) {
+                            con->last_record_updated = 1;
+                        }
+                        inj->qstat.affected_rows = com_query->affected_rows;
+                        inj->qstat.insert_id = com_query->insert_id;
+                        if (inj->qstat.insert_id > 0) {
+                            con->last_insert_id = inj->qstat.insert_id;
+                            g_debug("%s: last insert id:%d for con:%p", G_STRLOC, (int)con->last_insert_id, con);
+                        }
                     }
-                    inj->qstat.affected_rows = com_query->affected_rows;
-                    inj->qstat.insert_id = com_query->insert_id;
-                    if (inj->qstat.insert_id > 0) {
-                        con->last_insert_id = inj->qstat.insert_id;
-                        g_debug("%s: last insert id:%d for con:%p", G_STRLOC, (int)con->last_insert_id, con);
-                    }
+                    inj->qstat.server_status = com_query->server_status;
+                    inj->qstat.warning_count = com_query->warning_count;
+                    inj->qstat.query_status = com_query->query_status;
+                    g_debug("%s: server status, got: %d, con:%p", G_STRLOC, com_query->server_status, con);
+                    break;
                 }
-                inj->qstat.server_status = com_query->server_status;
-                inj->qstat.warning_count = com_query->warning_count;
-                inj->qstat.query_status = com_query->query_status;
-                g_debug("%s: server status, got: %d, con:%p", G_STRLOC, com_query->server_status, con);
-                break;
-            }
             case COM_INIT_DB:
                 break;
             case COM_CHANGE_USER:
                 break;
             default:
                 g_debug("%s: no chance to get server status", G_STRLOC);
-            }
-            if (con->srv->sql_mgr && con->srv->sql_mgr->sql_log_switch == ON) {
-                inj->ts_read_query_result_last = get_timer_microseconds();
-                log_sql_backend(con, inj);
-            }
         }
-
-        /* reset the packet-id checks as the server-side is finished */
-        network_mysqld_queue_reset(recv_sock);
-
-        ret = proxy_c_read_query_result(con);
-
-        if (PROXY_IGNORE_RESULT != ret) {
-            /* reset the packet-id checks, if we sent something to the client */
-            network_mysqld_queue_reset(send_sock);
+        if (con->srv->sql_mgr && con->srv->sql_mgr->sql_log_switch == ON) {
+            inj->ts_read_query_result_last = get_timer_microseconds();
+            log_sql_backend(con, inj);
         }
+    }
 
-        /**
-         * if the send-queue is empty, we have nothing to send
-         * and can read the next query */
-        if (send_sock->send_queue->chunks) {
-            con->state = ST_SEND_QUERY_RESULT;
-        } else {
-            /*
-             * we already forwarded the resultset,
-             * no way someone has flushed the resultset-queue
-             */
-            g_assert_cmpint(con->resultset_is_needed, ==, 1);
+    /* reset the packet-id checks as the server-side is finished */
+    network_mysqld_queue_reset(recv_sock);
 
-            con->state = ST_READ_QUERY;
-        }
+    ret = proxy_c_read_query_result(con);
+
+    if (PROXY_IGNORE_RESULT != ret) {
+        /* reset the packet-id checks, if we sent something to the client */
+        network_mysqld_queue_reset(send_sock);
+    }
+
+    /**
+     * if the send-queue is empty, we have nothing to send
+     * and can read the next query */
+    if (send_sock->send_queue->chunks) {
+        con->state = ST_SEND_QUERY_RESULT;
+    } else {
+        /*
+         * we already forwarded the resultset,
+         * no way someone has flushed the resultset-queue
+         */
+        g_assert_cmpint(con->resultset_is_needed, ==, 1);
+
+        con->state = ST_READ_QUERY;
     }
 
     return NETWORK_SOCKET_SUCCESS;

@@ -579,6 +579,8 @@ NETWORK_MYSQLD_PLUGIN_PROTO(server_timeout)
     con->prev_state = con->state;
     con->state = ST_SEND_ERROR;
 
+    g_debug("%s:call server_timeout", G_STRLOC);
+
     return NETWORK_SOCKET_SUCCESS;
 }
 
