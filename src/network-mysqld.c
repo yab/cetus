@@ -3545,7 +3545,7 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
     }
 
     con->client->update_time = srv->current_time;
-    if (con->server && !con->client->is_server_conn_reserved) {
+    if (con->is_admin_client == 0 && !con->client->is_server_conn_reserved) {
         con->client->is_need_q_peek_exec = 1;
         g_debug("%s: set is_need_q_peek_exec true, state:%d", G_STRLOC, con->state);
     } else {
