@@ -503,7 +503,9 @@ network_mysqld_queue_append_raw(network_socket *sock, network_queue *queue, GStr
     } else if (packet_id != (guint8)(sock->last_packet_id + 1)) {
         sock->last_packet_id++;
         g_debug("%s: server pack id ++: %d", G_STRLOC, sock->last_packet_id);
+#ifndef SIMPLE_PARSER
         network_mysqld_proto_set_packet_id(data, sock->last_packet_id);
+#endif
     } else {
         sock->last_packet_id++;
         g_debug("%s: server pack id ++: %d", G_STRLOC, sock->last_packet_id);
@@ -729,7 +731,7 @@ network_mysqld_con_get_packet(chassis *chas, network_socket *con)
     /* move the packet from the raw queue to the recv-queue */
     if ((packet = network_queue_pop_str(recv_queue_raw, packet_len + NET_HEADER_SIZE, NULL))) {
 #if NETWORK_DEBUG_TRACE_IO
-        g_debug("%s:output for sock:%p", G_STRLOC, con);
+        g_debug("%s:output for sock:%p, packet id:%d", G_STRLOC, con, packet_id);
         /* to trace the data we received from the socket, enable this */
         g_debug_hexdump(G_STRLOC, S(packet));
 #endif
@@ -1220,6 +1222,7 @@ plugin_call(chassis *srv, network_mysqld_con *con, int state)
                 /* ERR delivered to client, close the conn now */
                 con->prev_state = con->state;
                 con->state = ST_ERROR;
+                g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
                 break;
             case AUTH_SWITCH:
                 con->auth_result_state = MYSQLD_PACKET_OK;
@@ -3414,6 +3417,7 @@ send_part_content_to_client(network_mysqld_con *con)
     case NETWORK_SOCKET_ERROR:
         con->prev_state = con->state;
         con->state = ST_ERROR;
+        g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
         break;
     }
 
@@ -3497,6 +3501,7 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
     default:
         con->prev_state = con->state;
         con->state = ST_ERROR;
+        g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
         break;
     }
 
@@ -3595,6 +3600,8 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server)
                 G_STRLOC, con, server->src->name->str, con->orig_sql->str);
         network_mysqld_con_send_error_full(con->client,
                 C("response too long for proxy"), ER_CETUS_LONG_RESP, "HY000");
+        GString *packet = g_queue_peek_tail(con->client->send_queue->chunks);
+        network_mysqld_proto_set_packet_id(packet, con->client->last_packet_id);
         con->server_to_be_closed = 1;
         con->resp_too_long = 1;
         return ret;
@@ -3671,6 +3678,7 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
     if (recv_sock == NULL) {
         con->prev_state = con->state;
         con->state = ST_ERROR;
+        g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
         return DISP_CONTINUE;
     }
 
@@ -3688,15 +3696,30 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
         }
 
         switch (network_mysqld_read_rw_resp(con, recv_sock)) {
-        case NETWORK_SOCKET_SUCCESS:
+        case NETWORK_SOCKET_SUCCESS: {
             break;
+        }
         case NETWORK_SOCKET_WAIT_FOR_EVENT:
             timeout = con->read_timeout;
             g_debug("%s: set read query timeout, already read:%d", G_STRLOC, (int)recv_sock->resp_len);
-            GString *packet;
-            while ((packet = g_queue_pop_head(con->server->recv_queue->chunks)) != NULL) {
-                network_mysqld_queue_append_raw(con->client, con->client->send_queue, packet);
+            if (g_queue_is_empty(con->client->send_queue->chunks)) {
+                network_queue *queue = con->client->send_queue;
+                con->client->send_queue = con->server->recv_queue;
+                con->server->recv_queue = queue;
+                GString *packet = g_queue_peek_tail(con->client->send_queue->chunks);
+                if (packet) {
+                    con->client->last_packet_id = network_mysqld_proto_get_packet_id(packet);
+                } else {
+                    g_message("%s: packet is nil", G_STRLOC);
+                }
+            } else {
+                g_message("%s: client send queue is not empty", G_STRLOC);
+                GString *packet;
+                while ((packet = g_queue_pop_head(recv_sock->recv_queue->chunks)) != NULL) {
+                    network_mysqld_queue_append_raw(con->client, con->client->send_queue, packet);
+                }
             }
+
             if (con->client->send_queue->len > 0) {
                 g_debug("%s: send_part_content_to_client", G_STRLOC);
                 send_part_content_to_client(con);
@@ -3731,11 +3754,13 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
              */
             con->prev_state = con->state;
             con->state = ST_ERROR;
+            g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
             break;
         default:
             g_critical("%s: ...", G_STRLOC);
             con->prev_state = con->state;
             con->state = ST_ERROR;
+            g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
             break;
         }
     } while (con->state == ST_READ_QUERY_RESULT);
@@ -3840,6 +3865,7 @@ process_timeout_event(network_mysqld_con *con)
         default:
             con->prev_state = con->state;
             con->state = ST_ERROR;
+            g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
             break;
         }
     }
@@ -3972,6 +3998,7 @@ network_mysqld_con_handle(int event_fd, short events, void *user_data)
                  */
                 con->prev_state = con->state;
                 con->state = ST_ERROR;
+                g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
                 break;
             }
 
@@ -4063,6 +4090,7 @@ network_mysqld_con_handle(int event_fd, short events, void *user_data)
                 return;
             case NETWORK_SOCKET_ERROR:
                 con->state = ST_ERROR;
+                g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
                 break;
             }
             break;
@@ -4201,6 +4229,7 @@ network_mysqld_con_handle(int event_fd, short events, void *user_data)
         default:
             con->prev_state = con->state;
             con->state = ST_ERROR;
+            g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
             break;
         }
 

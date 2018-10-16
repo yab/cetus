@@ -160,6 +160,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_timeout)
         } else {
             con->prev_state = con->state;
             con->state = ST_ERROR;
+            g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
         }
         break;
     case ST_READ_QUERY_RESULT:
@@ -339,10 +340,22 @@ proxy_c_read_query_result(network_mysqld_con *con)
                  * make sure we send only one result-set per client-query
                  */
             if (!con->is_changed_user_failed) {
-                g_debug("%s: move recv queue to send queue", G_STRLOC);
-                GString *packet;
-                while ((packet = g_queue_pop_head(recv_sock->recv_queue->chunks)) != NULL) {
-                    network_mysqld_queue_append_raw(send_sock, send_sock->send_queue, packet);
+                if (g_queue_is_empty(send_sock->send_queue->chunks)) {
+                    network_queue *queue = con->client->send_queue;
+                    con->client->send_queue = con->server->recv_queue;
+                    con->server->recv_queue = queue;
+                    GString *packet = g_queue_peek_tail(con->client->send_queue->chunks);
+                    if (packet) {
+                        con->client->last_packet_id = network_mysqld_proto_get_packet_id(packet);
+                    } else {
+                        g_message("%s: packet is nil", G_STRLOC);
+                    }
+                } else {
+                    g_message("%s: client send queue is not empty", G_STRLOC);
+                    GString *packet;
+                    while ((packet = g_queue_pop_head(con->server->recv_queue->chunks)) != NULL) {
+                        network_mysqld_queue_append_raw(con->client, con->client->send_queue, packet);
+                    }
                 }
             }
             st->injected.sent_resultset++;
@@ -1745,6 +1758,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_send_query_result)
     if (con->is_changed_user_failed) {
         con->is_changed_user_failed = 0;
         con->state = ST_ERROR;
+        g_debug("%s, con:%p:state is set ST_ERROR", G_STRLOC, con);
         return NETWORK_SOCKET_SUCCESS;
     }
 
@@ -1918,6 +1932,8 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_read_query_result)
     network_mysqld_queue_reset(recv_sock);
 
     ret = proxy_c_read_query_result(con);
+
+    g_debug("%s: after proxy_c_read_query_result,ret:%d", G_STRLOC, ret);
 
     if (PROXY_IGNORE_RESULT != ret) {
         /* reset the packet-id checks, if we sent something to the client */
