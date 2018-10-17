@@ -4173,8 +4173,6 @@ network_mysqld_con_handle(int event_fd, short events, void *user_data)
             break;
         case ST_READ_QUERY:
             g_debug(G_STRLOC " %p con_handle -> ST_READ_QUERY", con);
-            CHECK_PENDING_EVENT(&(con->client->event));
-
             /* TODO If config is reloaded, close all current cons */
             g_assert(events == 0 || event_fd == con->client->fd);
             if (handle_read_query(con, ostate) == DISP_STOP) {
