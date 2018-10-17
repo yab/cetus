@@ -3683,8 +3683,10 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
     }
 
     do {
-        g_debug("%s: call network_mysqld_read_rw_resp:%d", G_STRLOC, (int)recv_sock->resp_len);
+        g_debug("%s: call network_mysqld_read_rw_resp:%d, to read:%d", G_STRLOC,
+                (int)recv_sock->resp_len, (int) recv_sock->to_read);
 
+        int resp_len = recv_sock->resp_len;
         if (srv->query_cache_enabled && recv_sock->to_read > 0) {
             g_debug("%s: check if query can be cached", G_STRLOC);
             proxy_plugin_con_t *st = con->plugin_con_state;
@@ -3702,24 +3704,26 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
         case NETWORK_SOCKET_WAIT_FOR_EVENT:
             timeout = con->read_timeout;
             g_debug("%s: set read query timeout, already read:%d", G_STRLOC, (int)recv_sock->resp_len);
-            if (g_queue_is_empty(con->client->send_queue->chunks)) {
-                network_queue *queue = con->client->send_queue;
-                con->client->send_queue = con->server->recv_queue;
-                con->server->recv_queue = queue;
-                GString *packet = g_queue_peek_tail(con->client->send_queue->chunks);
-                if (packet) {
-                    con->client->last_packet_id = network_mysqld_proto_get_packet_id(packet);
+            if (resp_len != recv_sock->resp_len) {
+                if (g_queue_is_empty(con->client->send_queue->chunks)) {
+                    network_queue *queue = con->client->send_queue;
+                    con->client->send_queue = con->server->recv_queue;
+                    con->server->recv_queue = queue;
+                    GString *packet = g_queue_peek_tail(con->client->send_queue->chunks);
+                    if (packet) {
+                        con->client->last_packet_id = network_mysqld_proto_get_packet_id(packet);
+                    } else {
+                        g_message("%s: packet is nil", G_STRLOC);
+                    }
                 } else {
-                    g_message("%s: packet is nil", G_STRLOC);
+                    g_message("%s: client send queue is not empty", G_STRLOC);
+                    GString *packet;
+                    while ((packet = g_queue_pop_head(recv_sock->recv_queue->chunks)) != NULL) {
+                        network_mysqld_queue_append_raw(con->client, con->client->send_queue, packet);
+                    }
                 }
-            } else {
-                g_message("%s: client send queue is not empty", G_STRLOC);
-                GString *packet;
-                while ((packet = g_queue_pop_head(recv_sock->recv_queue->chunks)) != NULL) {
-                    network_mysqld_queue_append_raw(con->client, con->client->send_queue, packet);
-                }
-            }
 
+            }
             if (con->client->send_queue->len > 0) {
                 g_debug("%s: send_part_content_to_client", G_STRLOC);
                 send_part_content_to_client(con);
