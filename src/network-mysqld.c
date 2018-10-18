@@ -2718,12 +2718,6 @@ process_rw_write(network_mysqld_con *con, network_mysqld_con_state_t ostate, int
         break;
     }
 
-    if (con->state == ST_READ_QUERY_RESULT) {
-        struct timeval timeout = con->read_timeout;
-        WAIT_FOR_EVENT(con->server, EV_READ, &timeout);
-        *disp_flag = DISP_STOP;
-        return 0;
-    }
     return 1;
 }
 
