@@ -341,6 +341,7 @@ proxy_c_read_query_result(network_mysqld_con *con)
                  */
             if (!con->is_changed_user_failed) {
                 if (g_queue_is_empty(send_sock->send_queue->chunks)) {
+                    g_debug("%s: exchange queue", G_STRLOC);
                     network_queue *queue = con->client->send_queue;
                     con->client->send_queue = con->server->recv_queue;
                     con->server->recv_queue = queue;

@@ -3607,6 +3607,18 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server)
         return ret;
     }
 
+    /*begin*/
+    if (read_len > 0 && strstr(con->orig_sql->str, "salaries") != NULL) {
+        network_queue_clear(con->client->recv_queue);
+        network_mysqld_queue_reset(con->client);
+        network_queue *queue = con->client->send_queue;
+        con->client->send_queue = con->server->recv_queue_raw;
+        con->server->recv_queue_raw = queue;
+        send_part_content_to_client(con);
+        con->state = ST_READ_QUERY;
+        return NETWORK_SOCKET_SUCCESS;
+    }
+    /*end*/
 
     if (!server->do_compress) {
         ret = network_mysqld_con_get_packet(chas, server);
@@ -3699,13 +3711,18 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
 
         switch (network_mysqld_read_rw_resp(con, recv_sock)) {
         case NETWORK_SOCKET_SUCCESS: {
-            break;
+            if (con->state == ST_READ_QUERY) {
+            return;
+            } else {
+                break;
+            }
         }
         case NETWORK_SOCKET_WAIT_FOR_EVENT:
             timeout = con->read_timeout;
             g_debug("%s: set read query timeout, already read:%d", G_STRLOC, (int)recv_sock->resp_len);
             if (resp_len != recv_sock->resp_len) {
                 if (g_queue_is_empty(con->client->send_queue->chunks)) {
+                    g_debug("%s: exchange queue", G_STRLOC);
                     network_queue *queue = con->client->send_queue;
                     con->client->send_queue = con->server->recv_queue;
                     con->server->recv_queue = queue;
