@@ -3571,8 +3571,26 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
     return DISP_CONTINUE;
 }
 
+static gboolean
+check_resp_end(network_queue *queue)
+{
+    GList *chunk;
+    chunk = queue->chunks->tail;
+    GString *packet = chunk->data;
+    if (packet->len >= 9) {
+        unsigned char *eof = packet->str + packet->len - 9;
+        if (eof[0] == 5 && eof[4] == 0xfe) {
+            g_debug("%s: check_resp_end true", G_STRLOC);
+            return TRUE;
+        }
+    }
+
+    g_debug("%s: check_resp_end false", G_STRLOC);
+    return FALSE;
+}
+
 network_socket_retval_t
-network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server)
+network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int *disp_flag)
 {
     chassis *chas = con->srv;
 
@@ -3592,19 +3610,44 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server)
     }
 
     server->resp_len += read_len;
+    
+    if (read_len > 0 && !con->resultset_is_needed) {
+        network_queue *queue = con->client->send_queue;
+        if (!g_queue_is_empty(queue->chunks)) {
+            GString *raw_packet;
+            while ((raw_packet = g_queue_pop_head(con->server->recv_queue_raw->chunks)) != NULL) {
+                g_queue_push_tail(queue->chunks, raw_packet);
+            }
+        } else {
+            con->client->send_queue = con->server->recv_queue_raw;
+            con->server->recv_queue_raw = queue;
+        }
+        if (check_resp_end(con->client->send_queue)) {
+            con->state = ST_SEND_QUERY_RESULT;
+            if (con->is_calc_found_rows) {
+                con->client->is_server_conn_reserved = 1;
+                g_debug("%s: set is_server_conn_reserved true for con:%p", G_STRLOC, con);
+            } else {
+                if (!con->is_prepared && !con->is_in_sess_context && !con->last_warning_met) {
+                    con->client->is_server_conn_reserved = 0;
+                    g_debug("%s: set is_server_conn_reserved false", G_STRLOC);
+                } else {
+                    con->client->is_server_conn_reserved = 1;
+                    g_debug("%s: set is_server_conn_reserved true", G_STRLOC);
+                }
+            }
 
-    if (server->resp_len > con->srv->max_resp_len) {
-        network_queue_clear(con->server->recv_queue);
-        network_mysqld_queue_reset(con->server);
-        g_message("%s: resp too long:%p, src port:%s, sql:%s",
-                G_STRLOC, con, server->src->name->str, con->orig_sql->str);
-        network_mysqld_con_send_error_full(con->client,
-                C("response too long for proxy"), ER_CETUS_LONG_RESP, "HY000");
-        GString *packet = g_queue_peek_tail(con->client->send_queue->chunks);
-        network_mysqld_proto_set_packet_id(packet, con->client->last_packet_id);
-        con->server_to_be_closed = 1;
-        con->resp_too_long = 1;
-        return ret;
+            proxy_plugin_con_t *st = con->plugin_con_state;
+            network_injection_queue_reset(st->injected.queries);
+            network_queue_clear(con->client->recv_queue);
+            network_mysqld_queue_reset(con->client);
+            *disp_flag = DISP_CONTINUE;
+        } else {
+            send_part_content_to_client(con);
+            WAIT_FOR_EVENT(con->server, EV_READ, &(con->read_timeout));
+            *disp_flag = DISP_STOP;
+        }
+        return NETWORK_SOCKET_SUCCESS;
     }
 
     if (!server->do_compress) {
@@ -3696,9 +3739,16 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
             }
         }
 
-        switch (network_mysqld_read_rw_resp(con, recv_sock)) {
+        int disp_flag = 0;
+        switch (network_mysqld_read_rw_resp(con, recv_sock, &disp_flag)) {
         case NETWORK_SOCKET_SUCCESS:
+            if (disp_flag == DISP_STOP) {
+                return DISP_STOP;
+            } if (disp_flag == DISP_CONTINUE) {
+                return DISP_CONTINUE;
+            } else {
                 break;
+            }
         case NETWORK_SOCKET_WAIT_FOR_EVENT:
             timeout = con->read_timeout;
             g_debug("%s: set read query timeout, already read:%d", G_STRLOC, (int)recv_sock->resp_len);

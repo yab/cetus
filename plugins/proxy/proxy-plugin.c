@@ -697,7 +697,7 @@ process_non_trans_query(network_mysqld_con *con, sql_context_t *context, mysqld_
     return PROXY_NO_DECISION;
 }
 
-static void
+static void 
 proxy_inject_packet(network_mysqld_con *con, int type, int resp_type, GString *payload, gboolean resultset_is_needed)
 {
     proxy_plugin_con_t *st = con->plugin_con_state;
@@ -1403,9 +1403,14 @@ network_read_query(network_mysqld_con *con, proxy_plugin_con_t *st)
     int payload_len = packet.data->len - NET_HEADER_SIZE;
     GString *payload = g_string_sized_new(payload_len);
     g_string_append_len(payload, packet.data->str + NET_HEADER_SIZE, payload_len);
+    sql_context_t *context = st->sql_context;
     switch (command) {
     case COM_QUERY:
-        proxy_inject_packet(con, PROXY_QUEUE_ADD_APPEND, INJ_ID_COM_QUERY, payload, TRUE);
+        if (context->stmt_type == STMT_SELECT && con->server->is_read_only) {
+            proxy_inject_packet(con, PROXY_QUEUE_ADD_APPEND, INJ_ID_COM_QUERY, payload, FALSE);
+        } else {
+            proxy_inject_packet(con, PROXY_QUEUE_ADD_APPEND, INJ_ID_COM_QUERY, payload, TRUE);
+        }
         break;
     case COM_STMT_PREPARE:
         proxy_inject_packet(con, PROXY_QUEUE_ADD_APPEND, INJ_ID_COM_STMT_PREPARE, payload, TRUE);
@@ -1567,7 +1572,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_read_query)
             network_mysqld_queue_append_raw(send_sock, send_sock->send_queue, packet);
         }
         /* we don't want to buffer the result-set */
-        con->resultset_is_needed = FALSE;
+        con->resultset_is_needed = 0;
 
         break;
     case PROXY_SEND_RESULT:{

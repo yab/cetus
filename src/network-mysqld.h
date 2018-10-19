@@ -573,6 +573,16 @@ struct network_mysqld_con {
     unsigned int ask_one_worker:1;
     unsigned int ask_the_given_worker:1;
     unsigned int is_client_to_be_closed:1;
+    /** Flag indicating if we the plugin doesn't need the resultset itself.
+     * 
+     * If set to TRUE, the plugin needs to see 
+     * the entire resultset and we will buffer it.
+     * If set to FALSE, the plugin is not interested 
+     * in the content of the resultset and we'll
+     * try to forward the packets to the client directly, 
+     * even before the full resultset is parsed.
+     */
+    unsigned int resultset_is_needed:1;
     unsigned int last_backend_type:2;
     unsigned int process_index:6;
     unsigned int all_participate_num:8;
@@ -601,17 +611,6 @@ struct network_mysqld_con {
     GString *auth_switch_to_method;
     GString *auth_switch_to_data;
     guint32 auth_switch_to_round;
-
-    /** Flag indicating if we the plugin doesn't need the resultset itself.
-     * 
-     * If set to TRUE, the plugin needs to see 
-     * the entire resultset and we will buffer it.
-     * If set to FALSE, the plugin is not interested 
-     * in the content of the resultset and we'll
-     * try to forward the packets to the client directly, 
-     * even before the full resultset is parsed.
-     */
-    gboolean resultset_is_needed;
 
     /**
      * Flag indicating that we have received a COM_QUIT command.
