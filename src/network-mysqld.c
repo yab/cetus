@@ -274,8 +274,6 @@ network_mysqld_con_new()
 
     con->max_retry_serv_cnt = 72;
     con->auth_switch_to_method = g_string_new(NULL);
-    con->auth_switch_to_round = 0;
-    con->auth_switch_to_data = g_string_new(NULL);
     con->is_auto_commit = 1;
 
     con->orig_sql = g_string_new(NULL);
@@ -405,7 +403,6 @@ network_mysqld_con_free(network_mysqld_con *con)
         sharding_plan_free(con->sharding_plan);
     }
     g_string_free(con->auth_switch_to_method, TRUE);
-    g_string_free(con->auth_switch_to_data, TRUE);
 
     /* we are still in the conns-array */
 
@@ -3572,17 +3569,34 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
 }
 
 static gboolean
-check_resp_end(network_queue *queue)
+check_resp_end(network_mysqld_con *con, network_queue *queue)
 {
     GList *chunk;
     chunk = queue->chunks->tail;
     GString *packet = chunk->data;
-    if (packet->len >= 9) {
-        unsigned char *eof = packet->str + packet->len - 9;
+    if (packet->len >= EOF_PACKET_LEN) {
+        unsigned char *eof = packet->str + packet->len - EOF_PACKET_LEN;
         if (eof[0] == 5 && eof[4] == 0xfe) {
             g_debug("%s: check_resp_end true", G_STRLOC);
             return TRUE;
         }
+
+        memcpy(con->last_payload, eof, EOF_PACKET_LEN);
+        con->last_payload_index = 0;
+    } else {
+        memcpy(con->last_payload, packet->str, packet->len);
+        con->last_payload_index = (con->last_payload_index + packet->len) % EOF_PACKET_LEN;
+        g_debug("%s: meet short packet:%d, new last_payload_index:%d", G_STRLOC,
+                (int) packet->len, con->last_payload_index);
+        if (con->last_payload[con->last_payload_index] != 5) {
+            return  FALSE;
+        }
+        int check_type_index = (con->last_payload_index + 4) % EOF_PACKET_LEN;
+        if (con->last_payload[check_type_index] == 0xfe) {
+            g_debug("%s: check_resp_end true here", G_STRLOC);
+            return TRUE;
+        }
+
     }
 
     g_debug("%s: check_resp_end false", G_STRLOC);
@@ -3622,7 +3636,7 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int
             con->client->send_queue = con->server->recv_queue_raw;
             con->server->recv_queue_raw = queue;
         }
-        if (check_resp_end(con->client->send_queue)) {
+        if (check_resp_end(con, con->client->send_queue)) {
             con->state = ST_SEND_QUERY_RESULT;
             if (con->is_calc_found_rows) {
                 con->client->is_server_conn_reserved = 1;
@@ -3637,6 +3651,7 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int
                 }
             }
 
+            g_debug("%s: check_resp_end end for con:%p", G_STRLOC, con);
             proxy_plugin_con_t *st = con->plugin_con_state;
             network_injection_queue_reset(st->injected.queries);
             network_queue_clear(con->client->recv_queue);
@@ -3742,6 +3757,7 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
         int disp_flag = 0;
         switch (network_mysqld_read_rw_resp(con, recv_sock, &disp_flag)) {
         case NETWORK_SOCKET_SUCCESS:
+            g_debug("%s: network_mysqld_read_rw_resp return success:%d for con:%p", G_STRLOC, (int)recv_sock->resp_len, con);
             if (disp_flag == DISP_STOP) {
                 return DISP_STOP;
             } if (disp_flag == DISP_CONTINUE) {
@@ -3751,10 +3767,11 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
             }
         case NETWORK_SOCKET_WAIT_FOR_EVENT:
             timeout = con->read_timeout;
-            g_debug("%s: set read query timeout, already read:%d", G_STRLOC, (int)recv_sock->resp_len);
+            g_debug("%s: set read query timeout, already read:%d, sql len:%d for con:%p",
+                    G_STRLOC, (int)recv_sock->resp_len, (int) con->orig_sql->len, con);
             if (resp_len != recv_sock->resp_len) {
                 if (g_queue_is_empty(con->client->send_queue->chunks)) {
-                    g_debug("%s: exchange queue", G_STRLOC);
+                    g_debug("%s: exchange queue:%p", G_STRLOC, con);
                     network_queue *queue = con->client->send_queue;
                     con->client->send_queue = con->server->recv_queue;
                     con->server->recv_queue = queue;
@@ -3765,7 +3782,7 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
                         g_message("%s: packet is nil", G_STRLOC);
                     }
                 } else {
-                    g_message("%s: client send queue is not empty", G_STRLOC);
+                    g_debug("%s: client send queue is not empty for con:%p", G_STRLOC, con);
                     GString *packet;
                     while ((packet = g_queue_pop_head(recv_sock->recv_queue->chunks)) != NULL) {
                         network_mysqld_queue_append_raw(con->client, con->client->send_queue, packet);
@@ -3774,7 +3791,7 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
 
             }
             if (con->client->send_queue->len > 0) {
-                g_debug("%s: send_part_content_to_client", G_STRLOC);
+                g_debug("%s: send_part_content_to_client:%p", G_STRLOC, con);
                 send_part_content_to_client(con);
             }
             WAIT_FOR_EVENT(con->server, EV_READ, &timeout);

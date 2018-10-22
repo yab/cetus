@@ -53,6 +53,7 @@
 #include "cetus-error.h"
 
 #define XID_LEN 128
+#define EOF_PACKET_LEN 9
 #define COMPRESS_BUF_SIZE 1048576
 
 typedef enum {
@@ -573,6 +574,17 @@ struct network_mysqld_con {
     unsigned int ask_one_worker:1;
     unsigned int ask_the_given_worker:1;
     unsigned int is_client_to_be_closed:1;
+    /**
+     * Flag indicating that we have received a COM_QUIT command.
+     * 
+     * This is mainly used to differentiate between the case 
+     * where the server closed the connection because of some error
+     * or if the client asked it to close its side of the connection.
+     * cetus would report spurious errors for the latter case,
+     * if we failed to track this command.
+     */
+    unsigned int com_quit_seen:1;
+
     /** Flag indicating if we the plugin doesn't need the resultset itself.
      * 
      * If set to TRUE, the plugin needs to see 
@@ -584,13 +596,16 @@ struct network_mysqld_con {
      */
     unsigned int resultset_is_needed:1;
     unsigned int last_backend_type:2;
+    unsigned int last_payload_index:4;
     unsigned int process_index:6;
     unsigned int all_participate_num:8;
 
     unsigned long long xa_id;
+    guint32 auth_switch_to_round;
 
     time_t last_check_conn_supplement_time;
 
+    unsigned char last_payload[EOF_PACKET_LEN];
     struct timeval req_recv_time;
     struct timeval resp_recv_time;
     struct timeval resp_send_time;
@@ -609,20 +624,6 @@ struct network_mysqld_con {
 
     /* track the auth-method-switch state */
     GString *auth_switch_to_method;
-    GString *auth_switch_to_data;
-    guint32 auth_switch_to_round;
-
-    /**
-     * Flag indicating that we have received a COM_QUIT command.
-     * 
-     * This is mainly used to differentiate between the case 
-     * where the server closed the connection because of some error
-     * or if the client asked it to close its side of the connection.
-     * cetus would report spurious errors for the latter case,
-     * if we failed to track this command.
-     */
-    gboolean com_quit_seen;
-
     /**
      * Contains the parsed packet.
      */

@@ -352,7 +352,7 @@ proxy_c_read_query_result(network_mysqld_con *con)
                         g_message("%s: packet is nil", G_STRLOC);
                     }
                 } else {
-                    g_message("%s: client send queue is not empty", G_STRLOC);
+                    g_debug("%s: client send queue is not empty", G_STRLOC);
                     GString *packet;
                     while ((packet = g_queue_pop_head(con->server->recv_queue->chunks)) != NULL) {
                         network_mysqld_queue_append_raw(con->client, con->client->send_queue, packet);
