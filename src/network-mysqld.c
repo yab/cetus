@@ -2723,6 +2723,11 @@ handle_send_query_to_servers(network_mysqld_con *con, network_mysqld_con_state_t
 {
     int disp_flag = 0;
 
+    con->analysis_next_pos = 0;
+    con->cur_resp_len = 0;
+    con->eof_met_cnt = 0;
+    con->partically_record_left_cnt = 0;
+
     /* 
      * send the query to the server
      * this state will loop until all the packets
@@ -3568,38 +3573,156 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
     return DISP_CONTINUE;
 }
 
+
 static gboolean
-check_resp_end(network_mysqld_con *con, network_queue *queue)
+analyze_stream(network_mysqld_con *con)
 {
-    GList *chunk;
-    chunk = queue->chunks->tail;
-    GString *packet = chunk->data;
-    if (packet->len >= EOF_PACKET_LEN) {
-        unsigned char *eof = packet->str + packet->len - EOF_PACKET_LEN;
-        if (eof[0] == 5 && eof[4] == 0xfe) {
-            g_debug("%s: check_resp_end true", G_STRLOC);
-            return TRUE;
+    GList         *chunk;
+    gboolean       need_more = FALSE;
+    network_queue *queue = con->client->send_queue;
+
+    for (chunk = queue->chunks->head; chunk; chunk = chunk->next) {
+        if (con->partically_record_left_cnt) {
+            con->partically_record_left_cnt--;
+            continue;
         }
 
-        memcpy(con->last_payload, eof, EOF_PACKET_LEN);
-        con->last_payload_index = 0;
-    } else {
-        memcpy(con->last_payload, packet->str, packet->len);
-        con->last_payload_index = (con->last_payload_index + packet->len) % EOF_PACKET_LEN;
-        g_debug("%s: meet short packet:%d, new last_payload_index:%d", G_STRLOC,
-                (int) packet->len, con->last_payload_index);
-        if (con->last_payload[con->last_payload_index] != 5) {
-            return  FALSE;
-        }
-        int check_type_index = (con->last_payload_index + 4) % EOF_PACKET_LEN;
-        if (con->last_payload[check_type_index] == 0xfe) {
-            g_debug("%s: check_resp_end true here", G_STRLOC);
-            return TRUE;
+        GString *s = chunk->data;
+        int diff, packet_len = NET_HEADER_SIZE;
+        unsigned char *header, *end;
+        int complete_record_len = 0;
+
+        int aggr_packet_len = con->last_payload_len + s->len;
+        if (aggr_packet_len < NET_HEADER_SIZE) {
+            memcpy(con->last_payload + con->last_payload_len, s->str, s->len);
+            con->last_payload_len = con->last_payload_len + s->len;
+            con->cur_resp_len += s->len;
+            continue;
         }
 
+        if (con->analysis_next_pos < con->cur_resp_len) {
+            diff = con->cur_resp_len - con->analysis_next_pos;
+
+            switch (con->last_payload_len) {
+                case 1:
+                    packet_len += con->last_payload[0] | s->str[0] << 8 | s->str[1] << 16;
+                    if (s->str[3] == MYSQLD_PACKET_EOF || s->str[3] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
+                    }
+                    con->client->last_packet_id = s->str[2];
+                    break;
+                case 2:
+                    packet_len += con->last_payload[0] | con->last_payload[1] << 8 | s->str[0] << 16;
+                    con->client->last_packet_id = s->str[1];
+                    if (s->str[2] == MYSQLD_PACKET_EOF || s->str[2] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
+                    }
+                    break;
+                case 3:
+                    packet_len += con->last_payload[0] | con->last_payload[1] << 8 | con->last_payload[2] << 16;
+                    con->client->last_packet_id = s->str[0];
+                    if (s->str[1] == MYSQLD_PACKET_EOF || s->str[3] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
+                    }
+                    break;
+                case 4:
+                    packet_len += con->last_payload[0] | con->last_payload[1] << 8 | con->last_payload[2] << 16;
+                    con->client->last_packet_id = con->last_payload[3];
+                    if (s->str[0] == MYSQLD_PACKET_EOF || s->str[0] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
+                    }
+                    break;
+                default:
+                    g_critical("%s: not expected here", G_STRLOC);
+                    break;
+            }
+
+            complete_record_len  = packet_len - con->last_payload_len;
+
+            header = s->str - diff;
+            end = s->str + s->len;
+            g_debug("%s:  packet len:%d, last_payload_len:%d, diff:%d for con:%p",
+                    G_STRLOC, packet_len, (int) con->last_payload_len, diff,  con);
+        } else {
+            diff = con->analysis_next_pos - con->cur_resp_len;
+            header = s->str + diff;
+            end = s->str + s->len;
+            packet_len = NET_HEADER_SIZE + header[0] | header[1] << 8 | header[2] << 16;
+            con->client->last_packet_id = header[NET_HEADER_SIZE - 1];
+            if (header[NET_HEADER_SIZE] == MYSQLD_PACKET_EOF || header[NET_HEADER_SIZE] == MYSQLD_PACKET_ERR) {
+                con->eof_met_cnt++;
+            }
+            g_debug("%s: packet id here:%d, packet len:%d, eof flag:%d for con:%p",
+                    G_STRLOC, header[NET_HEADER_SIZE - 1], packet_len,  header[NET_HEADER_SIZE], con);
+            complete_record_len = diff + packet_len;
+        }
+
+        con->analysis_next_pos += packet_len;
+        con->cur_resp_len += s->len;
+
+        con->last_payload_len = 0;
+
+        g_debug("%s: complete_record_len:%d, ", G_STRLOC, complete_record_len);
+
+        header = header + packet_len;
+        if (header < end) {
+            do {
+                if (header < (end - NET_HEADER_SIZE)) {
+                    packet_len = NET_HEADER_SIZE + header[0] | header[1] << 8 | header[2] << 16;
+                    int last_packet_id = header[NET_HEADER_SIZE - 1];
+                    if (header[NET_HEADER_SIZE] == MYSQLD_PACKET_EOF || header[NET_HEADER_SIZE] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
+                    }
+                    g_debug("%s: packet id here:%d, packet len:%d, eof flag:%d, complete_record_len:%d for con:%p",
+                            G_STRLOC, header[NET_HEADER_SIZE - 1], packet_len, header[NET_HEADER_SIZE], complete_record_len, con);
+                    header = header + packet_len;
+                    con->analysis_next_pos += packet_len;
+                    if (header < end) {
+                        con->client->last_packet_id = last_packet_id;
+                        complete_record_len += packet_len;
+                    } else {
+                        break;
+                    }
+                } else {
+                    memcpy(con->last_payload, header, end - header);
+                    con->last_payload_len = end - header;
+                    g_debug("%s: not enough info, analysis_next_pos:%d, header:%p, end:%p for con:%p",
+                            G_STRLOC, (int) con->analysis_next_pos, header, end, con);
+                    break;
+                }
+            } while (TRUE);
+        }
+
+        g_debug("%s: complete_record_len:%d", G_STRLOC, complete_record_len);
+        g_debug("%s: cur resp len:%d, analysis_next_pos:%d, packet len:%d, s->len:%d for con:%p",
+                G_STRLOC, (int) con->cur_resp_len, (int) con->analysis_next_pos,  packet_len, (int) s->len, con);
+        if (con->analysis_next_pos != con->cur_resp_len) {
+            need_more = TRUE;
+            int  partially_diff = 0;
+            if (complete_record_len > 0) {
+                partially_diff = s->len - complete_record_len;
+                g_debug("%s: partially_diff:%d", G_STRLOC, partially_diff);
+                GString *remainder = g_string_sized_new(partially_diff);
+                g_string_append_len(remainder, s->str + complete_record_len, partially_diff);
+                s->len = complete_record_len;
+                queue->len -= partially_diff; 
+                network_queue_append(con->server->recv_queue_raw, remainder);
+            } else {
+                GString *raw_packet = g_queue_pop_tail(queue->chunks);
+                queue->len -= raw_packet->len;
+                network_queue_append(con->server->recv_queue_raw, raw_packet);
+            }
+            con->partically_record_left_cnt++;
+            g_debug("%s: wait more response, analysis_next_pos:%d, cur_resp_len:%d, diff:%d, complete_record_len:%d for con:%p",
+                    G_STRLOC, (int) con->analysis_next_pos, (int) con->cur_resp_len, partially_diff, complete_record_len, con);
+            break;
+        }
     }
 
-    g_debug("%s: check_resp_end false", G_STRLOC);
+    if (con->eof_met_cnt > 1 && !need_more) {
+        return TRUE;
+    }
+
     return FALSE;
 }
 
@@ -3636,7 +3759,8 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int
             con->client->send_queue = con->server->recv_queue_raw;
             con->server->recv_queue_raw = queue;
         }
-        if (check_resp_end(con, con->client->send_queue)) {
+
+        if (analyze_stream(con)) {
             con->state = ST_SEND_QUERY_RESULT;
             if (con->is_calc_found_rows) {
                 con->client->is_server_conn_reserved = 1;
@@ -3651,7 +3775,6 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int
                 }
             }
 
-            g_debug("%s: check_resp_end end for con:%p", G_STRLOC, con);
             proxy_plugin_con_t *st = con->plugin_con_state;
             network_injection_queue_reset(st->injected.queries);
             network_queue_clear(con->client->recv_queue);
@@ -3778,8 +3901,6 @@ normal_read_query_result(network_mysqld_con *con, network_mysqld_con_state_t ost
                     GString *packet = g_queue_peek_tail(con->client->send_queue->chunks);
                     if (packet) {
                         con->client->last_packet_id = network_mysqld_proto_get_packet_id(packet);
-                    } else {
-                        g_message("%s: packet is nil", G_STRLOC);
                     }
                 } else {
                     g_debug("%s: client send queue is not empty for con:%p", G_STRLOC, con);

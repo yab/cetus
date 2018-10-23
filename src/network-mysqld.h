@@ -53,7 +53,7 @@
 #include "cetus-error.h"
 
 #define XID_LEN 128
-#define EOF_PACKET_LEN 9
+#define ANALYSIS_PACKET_LEN 5
 #define COMPRESS_BUF_SIZE 1048576
 
 typedef enum {
@@ -596,22 +596,27 @@ struct network_mysqld_con {
      */
     unsigned int resultset_is_needed:1;
     unsigned int last_backend_type:2;
-    unsigned int last_payload_index:4;
+    unsigned int eof_met_cnt:2;
+    unsigned int last_payload_len:4;
     unsigned int process_index:6;
+    unsigned int last_packet_id:8;
     unsigned int all_participate_num:8;
 
     unsigned long long xa_id;
     guint32 auth_switch_to_round;
+    guint32 partically_record_left_cnt;
 
     time_t last_check_conn_supplement_time;
 
-    unsigned char last_payload[EOF_PACKET_LEN];
+    unsigned char last_payload[ANALYSIS_PACKET_LEN];
     struct timeval req_recv_time;
     struct timeval resp_recv_time;
     struct timeval resp_send_time;
 
     guint64 resp_cnt;
     guint64 last_insert_id;
+    guint64 analysis_next_pos;
+    guint64 cur_resp_len;
 
     /**
      * An integer indicating the result received from a server 
