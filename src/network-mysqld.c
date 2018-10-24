@@ -3580,15 +3580,19 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
     int            total_output = 0;
     GList         *chunk;
     gboolean       need_more = FALSE;
-    network_queue *queue = con->client->send_queue;
+    network_queue *queue = con->server->recv_queue_raw;
+
+    g_debug("%s: analyze_stream here:%d for con:%p, con->partically_record_left_cnt:%d",
+            G_STRLOC, (int) con->last_payload_len, con, (int) con->partically_record_left_cnt);
 
     for (chunk = queue->chunks->head; chunk; chunk = chunk->next) {
+        GString *s = chunk->data;
         if (con->partically_record_left_cnt) {
             con->partically_record_left_cnt--;
+            g_debug("%s: continue  here:%d for con:%p, s->len:%d", G_STRLOC, con->last_payload_len, con, (int) s->len);
             continue;
         }
 
-        GString *s = chunk->data;
         int diff, packet_len = NET_HEADER_SIZE;
         unsigned char *header, *end;
         int complete_record_len = 0;
@@ -3600,6 +3604,7 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
                 memcpy(con->last_payload + con->last_payload_len, s->str, s->len);
                 con->last_payload_len = con->last_payload_len + s->len;
                 con->cur_resp_len += s->len;
+                g_debug("%s: padding here:%d for con:%p", G_STRLOC, con->last_payload_len, con);
                 continue;
             }
         }
@@ -3637,7 +3642,7 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
                     }
                     break;
                 default:
-                    g_critical("%s: not expected here", G_STRLOC);
+                    g_critical("%s: not expected here:%d for con:%p", G_STRLOC, con->last_payload_len, con);
                     break;
             }
 
@@ -3649,6 +3654,8 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
             } else {
                 con->last_payload_len = 0;
                 con->cur_resp_len += s->len;
+                g_debug("%s:continue here:%d for con:%p, packet_len:%d, s->len:%d", 
+                        G_STRLOC, con->last_payload_len, con, packet_len, (int) s->len);
                 continue;
             }
             g_debug("%s:  packet len:%d, last_payload_len:%d, diff:%d for con:%p",
@@ -3660,6 +3667,8 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
             if (header >= end) {
                 con->cur_resp_len += s->len;
                 con->last_payload_len = 0;
+                g_debug("%s:continue here:%d for con:%p, cur_resp_len:%d, analysis_next_pos:%d, s->len:%d",
+                        G_STRLOC, con->last_payload_len, con, (int) con->cur_resp_len, (int) con->analysis_next_pos, (int) s->len);
                 continue;
             }
             packet_len = NET_HEADER_SIZE + header[0] | header[1] << 8 | header[2] << 16;
@@ -3667,14 +3676,15 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
             if (header[NET_HEADER_SIZE] == MYSQLD_PACKET_EOF || header[NET_HEADER_SIZE] == MYSQLD_PACKET_ERR) {
                 con->eof_met_cnt++;
             }
-            g_debug("%s: packet id here:%d, packet len:%d, eof flag:%d for con:%p",
-                    G_STRLOC, header[NET_HEADER_SIZE - 1], packet_len,  header[NET_HEADER_SIZE], con);
+            g_debug("%s: packet id here:%d, packet len:%d, eof flag:%d for con:%p, con->analysis_next_pos:%d, con->cur_resp_len:%d",
+                    G_STRLOC, header[NET_HEADER_SIZE - 1], packet_len,  header[NET_HEADER_SIZE], con, (int) con->analysis_next_pos, (int) con->cur_resp_len);
             header = header + packet_len;
             if (header <= end) {
                 complete_record_len = diff + packet_len;
             } else {
                 con->last_payload_len = 0;
                 con->cur_resp_len += s->len;
+                g_debug("%s:continue here:%d for con:%p, s->len:%d, packet_len:%d", G_STRLOC, con->last_payload_len, con, (int) s->len, packet_len);
                 continue;
             }
         }
@@ -3683,7 +3693,7 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
         con->cur_resp_len += s->len;
         con->last_payload_len = 0;
 
-        g_debug("%s: complete_record_len:%d, ", G_STRLOC, complete_record_len);
+        g_debug("%s: complete_record_len:%d for con:%p ", G_STRLOC, complete_record_len, con);
 
         if (header < end) {
             do {
@@ -3710,8 +3720,8 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
                 } else {
                     memcpy(con->last_payload, header, end - header);
                     con->last_payload_len = end - header;
-                    g_debug("%s: not enough info, analysis_next_pos:%d, header:%p, end:%p for con:%p",
-                            G_STRLOC, (int) con->analysis_next_pos, header, end, con);
+                    g_debug("%s: not enough info, analysis_next_pos:%d, header:%p, end:%p for con:%p, last_payload_len:%d",
+                            G_STRLOC, (int) con->analysis_next_pos, header, end, con, (int) con->last_payload_len);
                     break;
                 }
             } while (TRUE);
@@ -3721,7 +3731,6 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
 
         total_output += complete_record_len;
 
-        g_debug("%s: complete_record_len:%d", G_STRLOC, complete_record_len);
         g_debug("%s: cur resp len:%d, analysis_next_pos:%d, packet len:%d, s->len:%d for con:%p",
                 G_STRLOC, (int) con->cur_resp_len, (int) con->analysis_next_pos,  packet_len, (int) s->len, con);
         if (con->analysis_next_pos != con->cur_resp_len) {
@@ -3729,16 +3738,16 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
             int  partially_diff = 0;
             if (complete_record_len > 0) {
                 partially_diff = s->len - complete_record_len;
-                g_debug("%s: partially_diff:%d", G_STRLOC, partially_diff);
+                g_debug("%s: partially_diff:%d for con:%p", G_STRLOC, partially_diff, con);
                 GString *remainder = g_string_sized_new(partially_diff);
                 g_string_append_len(remainder, s->str + complete_record_len, partially_diff);
                 s->len = complete_record_len;
                 queue->len -= partially_diff; 
-                network_queue_append(con->server->recv_queue_raw, remainder);
+                network_queue_append(con->server->recv_queue, remainder);
             } else {
                 GString *raw_packet = g_queue_pop_tail(queue->chunks);
                 queue->len -= raw_packet->len;
-                network_queue_append(con->server->recv_queue_raw, raw_packet);
+                network_queue_append(con->server->recv_queue, raw_packet);
             }
             con->partically_record_left_cnt++;
             g_debug("%s: wait more response, analysis_next_pos:%d, cur_resp_len:%d, diff:%d, complete_record_len:%d for con:%p",
@@ -3748,6 +3757,7 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
     }
 
     if (chunk && chunk->next != NULL) {
+        g_message("%s: still has packets, execute here for con:%p", G_STRLOC, con);
         chunk = chunk->next;
         g_queue_unlink(queue->chunks, chunk);
         GString *packet;
@@ -3755,12 +3765,14 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
         do {
             packet = chunk->data;
             len += packet->len;
-            network_queue_append(con->server->recv_queue_raw, packet);
+            network_queue_append(con->server->recv_queue, packet);
             chunk = chunk->next;
         } while (chunk);
 
         queue->len -= len;
     }
+
+    g_debug("%s: execute here, last_payload_len:%d for con:%p", G_STRLOC, con->last_payload_len, con);
 
     if (total_output > 0) {
         *send_flag = 1;
@@ -3795,6 +3807,9 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int
     server->resp_len += read_len;
     
     if (read_len > 0 && !con->resultset_is_needed) {
+        int send_flag = 0;
+        gboolean is_finished = analyze_stream(con, &send_flag);
+
         network_queue *queue = con->client->send_queue;
         if (!g_queue_is_empty(queue->chunks)) {
             int len;
@@ -3805,13 +3820,19 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int
             }
 
             queue->len += len;
+            g_message("%s:  append raw packets to send queue for con:%p", G_STRLOC, con);
+            network_queue *reserved_queue = con->server->recv_queue_raw;
+            con->server->recv_queue_raw = con->server->recv_queue;
+            con->server->recv_queue = reserved_queue;
+
         } else {
+            network_queue *reserved_queue = con->client->send_queue;
             con->client->send_queue = con->server->recv_queue_raw;
-            con->server->recv_queue_raw = queue;
+            con->server->recv_queue_raw = con->server->recv_queue;;
+            con->server->recv_queue = reserved_queue;
         }
 
-        int send_flag = 0;
-        if (analyze_stream(con, &send_flag)) {
+        if (is_finished) {
             con->state = ST_SEND_QUERY_RESULT;
             if (con->is_calc_found_rows) {
                 con->client->is_server_conn_reserved = 1;
