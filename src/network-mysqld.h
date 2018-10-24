@@ -596,7 +596,7 @@ struct network_mysqld_con {
      */
     unsigned int resultset_is_needed:1;
     unsigned int last_backend_type:2;
-    unsigned int eof_met_cnt:2;
+    unsigned int eof_met_cnt:4;
     unsigned int last_payload_len:4;
     unsigned int process_index:6;
     unsigned int last_packet_id:8;

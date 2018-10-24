@@ -3615,7 +3615,10 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
             switch (con->last_payload_len) {
                 case 1:
                     packet_len += con->last_payload[0] | s->str[0] << 8 | s->str[1] << 16;
-                    if (s->str[3] == MYSQLD_PACKET_EOF || s->str[3] == MYSQLD_PACKET_ERR) {
+                    if (s->str[3] == MYSQLD_PACKET_EOF) {
+                        con->eof_met_cnt++;
+                    } else if (s->str[3] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
                         con->eof_met_cnt++;
                     }
                     last_packet_id = s->str[2];
@@ -3623,21 +3626,30 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
                 case 2:
                     packet_len += con->last_payload[0] | con->last_payload[1] << 8 | s->str[0] << 16;
                     last_packet_id = s->str[1];
-                    if (s->str[2] == MYSQLD_PACKET_EOF || s->str[2] == MYSQLD_PACKET_ERR) {
+                    if (s->str[2] == MYSQLD_PACKET_EOF) {
+                        con->eof_met_cnt++;
+                    } else if (s->str[2] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
                         con->eof_met_cnt++;
                     }
                     break;
                 case 3:
                     packet_len += con->last_payload[0] | con->last_payload[1] << 8 | con->last_payload[2] << 16;
                     last_packet_id = s->str[0];
-                    if (s->str[1] == MYSQLD_PACKET_EOF || s->str[1] == MYSQLD_PACKET_ERR) {
+                    if (s->str[1] == MYSQLD_PACKET_EOF) {
+                        con->eof_met_cnt++;
+                    } else if (s->str[1] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
                         con->eof_met_cnt++;
                     }
                     break;
                 case 4:
                     packet_len += con->last_payload[0] | con->last_payload[1] << 8 | con->last_payload[2] << 16;
                     last_packet_id = con->last_payload[3];
-                    if (s->str[0] == MYSQLD_PACKET_EOF || s->str[0] == MYSQLD_PACKET_ERR) {
+                    if (s->str[0] == MYSQLD_PACKET_EOF) {
+                        con->eof_met_cnt++;
+                    } else if (s->str[0] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
                         con->eof_met_cnt++;
                     }
                     break;
@@ -3673,7 +3685,10 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
             }
             packet_len = NET_HEADER_SIZE + header[0] | header[1] << 8 | header[2] << 16;
             last_packet_id = header[NET_HEADER_SIZE - 1];
-            if (header[NET_HEADER_SIZE] == MYSQLD_PACKET_EOF || header[NET_HEADER_SIZE] == MYSQLD_PACKET_ERR) {
+            if (header[NET_HEADER_SIZE] == MYSQLD_PACKET_EOF) {
+                con->eof_met_cnt++;
+            } else  if (header[NET_HEADER_SIZE] == MYSQLD_PACKET_ERR) {
+                con->eof_met_cnt++;
                 con->eof_met_cnt++;
             }
             g_debug("%s: packet id here:%d, packet len:%d, eof flag:%d for con:%p, con->analysis_next_pos:%d, con->cur_resp_len:%d",
@@ -3700,7 +3715,10 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
                 if (header < (end - NET_HEADER_SIZE)) {
                     packet_len = NET_HEADER_SIZE + header[0] | header[1] << 8 | header[2] << 16;
                     int last_packet_id = header[NET_HEADER_SIZE - 1];
-                    if (header[NET_HEADER_SIZE] == MYSQLD_PACKET_EOF || header[NET_HEADER_SIZE] == MYSQLD_PACKET_ERR) {
+                    if (header[NET_HEADER_SIZE] == MYSQLD_PACKET_EOF) {
+                        con->eof_met_cnt++;
+                    } else if (header[NET_HEADER_SIZE] == MYSQLD_PACKET_ERR) {
+                        con->eof_met_cnt++;
                         con->eof_met_cnt++;
                     }
                     g_debug("%s: packet id here:%d, packet len:%d, eof flag:%d, complete_record_len:%d for con:%p",
