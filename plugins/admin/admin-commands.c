@@ -1673,6 +1673,8 @@ static struct sql_help_entry_t {
     {"update backends set (type|state)=x where (backend_ndx=<index>|address=<'ip:port'>)",
      "update mysql instance type or state", ALL_HELP},
     {"delete from backends where (backend_ndx=<index>|address=<'ip:port'>)", NULL, ALL_HELP},
+    {"remove backend where (backend_ndx=<index>|address='<ip:port>')", NULL, ALL_HELP},
+    {"remove backend backend_ndx", NULL, ALL_HELP},
     {"add master <'ip:port'>", NULL, RW_HELP},
     {"add master <'ip:port@group'>", NULL, SHARD_HELP},
     {"add slave <'ip:port'>", NULL, RW_HELP},
@@ -2232,3 +2234,22 @@ void admin_sql_log_status(network_mysqld_con* con) {
     g_free(cursize);
 }
 
+void admin_comment_handle(network_mysqld_con* con) {
+    con->direct_answer = 1;
+    network_mysqld_con_send_ok_full(con->client, 0, 0, 0, 0);
+}
+
+void admin_select_version_comment(network_mysqld_con* con) {
+    con->direct_answer = 1;
+
+    GPtrArray* fields = network_mysqld_proto_fielddefs_new();
+    MAKE_FIELD_DEF_1_COL(fields, "@@version_comment");
+    GPtrArray *rows = g_ptr_array_new_with_free_func(
+        (void*)network_mysqld_mysql_field_row_free);
+    APPEND_ROW_1_COL(rows, "Cetus proxy");
+
+    network_mysqld_con_send_resultset(con->client, fields, rows);
+
+    network_mysqld_proto_fielddefs_free(fields);
+    g_ptr_array_free(rows, TRUE);
+}

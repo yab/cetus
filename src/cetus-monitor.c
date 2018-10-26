@@ -569,7 +569,7 @@ check_slave_timestamp(int fd, short what, void *arg)
         backend_state_t oldstate = backend->state;
         gint ret = 0;
         if (backend->type == BACKEND_TYPE_RW || backend->state == BACKEND_STATE_DELETED ||
-            backend->state == BACKEND_STATE_MAINTAINING)
+            backend->state == BACKEND_STATE_MAINTAINING || backend->state == BACKEND_STATE_OFFLINE)
             continue;
 
         char *backend_addr = backend->addr->name->str;
@@ -755,7 +755,7 @@ cetus_monitor_mainloop(void *data)
 #if 0
     cetus_monitor_open(monitor, MONITOR_TYPE_CHECK_CONFIG);
 #endif
-    chassis_event_loop(loop);
+    chassis_event_loop(loop, NULL);
 
     g_message("monitor thread closing %d mysql conns", g_hash_table_size(monitor->backend_conns));
     g_hash_table_destroy(monitor->backend_conns);

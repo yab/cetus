@@ -153,7 +153,7 @@ chassis_config_get_mysql_connection(chassis_config_t *conf)
     if (!conn)
         return NULL;
 
-    unsigned int timeout = 2 * SECONDS;
+    unsigned int timeout = 1 * SECONDS;
     mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
     mysql_options(conn, MYSQL_OPT_READ_TIMEOUT, &timeout);
     mysql_options(conn, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
@@ -668,7 +668,7 @@ chassis_config_update_object_cache(chassis_config_t *conf, const char *name)
         return;
     time_t now = time(0);
     chassis_config_object_set_cache(object, NULL, now);
-    char *str;
+    char *str = NULL;
     chassis_config_query_object(conf, name, &str);
     if (str) {                  /* we just want to trigger query&caching, result is not needed */
         g_free(str);
