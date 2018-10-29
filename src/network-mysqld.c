@@ -102,6 +102,8 @@
 extern int      cetus_last_process;
 
 static void network_mysqld_self_con_handle(int event_fd, short events, void *user_data);
+static network_socket_retval_t network_mysqld_process_select_resp(network_mysqld_con *con, 
+        network_socket *server, int *finish_flag, int *disp_flag);
 
 /**
  * call the cleanup callback for the current connection
@@ -999,6 +1001,18 @@ network_mysqld_read_mul_packets(chassis G_GNUC_UNUSED *chas,
 
     server->is_waiting = 0;
     server->resp_len += to_read;
+
+    g_debug("%s: befre checking network_mysqld_process_select_resp, resp len:%d, to read:%d",
+            G_STRLOC, (int) server->resp_len, (int) to_read);
+    if (con->candidate_tcp_streamed && con->num_servers_visited == 1) {
+        g_debug("%s: visit network_mysqld_process_select_resp", G_STRLOC);
+        network_socket_retval_t result = network_mysqld_process_select_resp(con, server, is_finished, NULL);
+        if (*is_finished) {
+            g_debug("%s: is finished true here", G_STRLOC);
+        }
+        return  result;
+    }
+
     enum enum_server_command orig_command = con->parse.command;
     if (con->attr_adj_state == ATTR_DIF_CHANGE_USER) {
         con->parse.command = COM_CHANGE_USER;
@@ -2783,10 +2797,16 @@ shard_read_response(network_mysqld_con *con, server_session_t *ss)
             }
         }
     }
+
     int is_finished = 0;
-    switch (network_mysqld_read_mul_packets(con->srv, con, ss->server, &is_finished)) {
+    network_socket_retval_t result;
+
+    result = network_mysqld_read_mul_packets(con->srv, con, ss->server, &is_finished);
+
+    switch (result) {
     case NETWORK_SOCKET_SUCCESS:
         if (is_finished) {
+            g_debug("%s:read finished for server:%p", G_STRLOC, ss->server);
             con->num_pending_servers--;
             if (ss->read_cal_flag == 0) {
                 con->num_read_pending--;
@@ -2820,7 +2840,6 @@ shard_read_response(network_mysqld_con *con, server_session_t *ss)
             ss->read_cal_flag = 0;
             g_debug("%s:num_read_pending:%d, ss->index:%d for con:%p",
                     G_STRLOC, con->num_read_pending, ss->index, con);
-
             break;
         }
     case NETWORK_SOCKET_WAIT_FOR_EVENT:
@@ -3575,12 +3594,12 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
 
 
 static gboolean
-analyze_stream(network_mysqld_con *con, int *send_flag)
+analyze_stream(network_mysqld_con *con, network_socket *server, int *send_flag)
 {
     int            total_output = 0;
     GList         *chunk;
     gboolean       need_more = FALSE;
-    network_queue *queue = con->server->recv_queue_raw;
+    network_queue *queue = server->recv_queue_raw;
 
     g_debug("%s: analyze_stream here:%d for con:%p, con->partically_record_left_cnt:%d",
             G_STRLOC, (int) con->last_payload_len, con, (int) con->partically_record_left_cnt);
@@ -3761,11 +3780,11 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
                 g_string_append_len(remainder, s->str + complete_record_len, partially_diff);
                 s->len = complete_record_len;
                 queue->len -= partially_diff; 
-                network_queue_append(con->server->recv_queue, remainder);
+                network_queue_append(server->recv_queue, remainder);
             } else {
                 GString *raw_packet = g_queue_pop_tail(queue->chunks);
                 queue->len -= raw_packet->len;
-                network_queue_append(con->server->recv_queue, raw_packet);
+                network_queue_append(server->recv_queue, raw_packet);
             }
             con->partically_record_left_cnt++;
             g_debug("%s: wait more response, analysis_next_pos:%d, cur_resp_len:%d, diff:%d, complete_record_len:%d for con:%p",
@@ -3783,7 +3802,7 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
         do {
             packet = chunk->data;
             len += packet->len;
-            network_queue_append(con->server->recv_queue, packet);
+            network_queue_append(server->recv_queue, packet);
             chunk = chunk->next;
         } while (chunk);
 
@@ -3796,11 +3815,84 @@ analyze_stream(network_mysqld_con *con, int *send_flag)
         *send_flag = 1;
     }
     if (con->eof_met_cnt > 1 && !need_more) {
+        g_debug("%s: finished true for con:%p", G_STRLOC, con);
         return TRUE;
     }
 
     return FALSE;
 }
+
+
+static network_socket_retval_t
+network_mysqld_process_select_resp(network_mysqld_con *con, network_socket *server, int *finish_flag, int *disp_flag)
+{
+    int send_flag = 0;
+    gboolean is_finished = analyze_stream(con, server, &send_flag);
+
+    network_queue *queue = con->client->send_queue;
+    if (!g_queue_is_empty(queue->chunks)) {
+        int len;
+        GString *raw_packet;
+        while ((raw_packet = g_queue_pop_head(server->recv_queue_raw->chunks)) != NULL) {
+            len += raw_packet->len;
+            g_queue_push_tail(queue->chunks, raw_packet);
+        }
+
+        queue->len += len;
+        g_message("%s:  append raw packets to send queue for con:%p", G_STRLOC, con);
+        network_queue *reserved_queue = server->recv_queue_raw;
+        server->recv_queue_raw = server->recv_queue;
+        server->recv_queue = reserved_queue;
+
+    } else {
+        network_queue *reserved_queue = con->client->send_queue;
+        con->client->send_queue = server->recv_queue_raw;
+        server->recv_queue_raw = server->recv_queue;;
+        server->recv_queue = reserved_queue;
+    }
+
+#ifdef SIMPLE_PARSER
+    if (is_finished) {
+        con->state = ST_SEND_QUERY_RESULT;
+        if (con->is_calc_found_rows) {
+            con->client->is_server_conn_reserved = 1;
+            g_debug("%s: set is_server_conn_reserved true for con:%p", G_STRLOC, con);
+        } else {
+            if (!con->is_prepared && !con->is_in_sess_context && !con->last_warning_met) {
+                con->client->is_server_conn_reserved = 0;
+                g_debug("%s: set is_server_conn_reserved false", G_STRLOC);
+            } else {
+                con->client->is_server_conn_reserved = 1;
+                g_debug("%s: set is_server_conn_reserved true", G_STRLOC);
+            }
+        }
+
+        proxy_plugin_con_t *st = con->plugin_con_state;
+        network_injection_queue_reset(st->injected.queries);
+        network_queue_clear(con->client->recv_queue);
+        network_mysqld_queue_reset(con->client);
+        if (disp_flag) {
+            *disp_flag = DISP_CONTINUE;
+        }
+    } else {
+        if (send_flag)  {
+            send_part_content_to_client(con);
+        }
+        WAIT_FOR_EVENT(server, EV_READ, &(con->read_timeout));
+        if (disp_flag) {
+            *disp_flag = DISP_STOP;
+        }
+
+    }
+#else
+    if (is_finished) {
+        *finish_flag = 1;
+    }
+#endif
+
+    return NETWORK_SOCKET_SUCCESS;
+}
+
 
 network_socket_retval_t
 network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int *disp_flag)
@@ -3825,59 +3917,7 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int
     server->resp_len += read_len;
     
     if (read_len > 0 && !con->resultset_is_needed) {
-        int send_flag = 0;
-        gboolean is_finished = analyze_stream(con, &send_flag);
-
-        network_queue *queue = con->client->send_queue;
-        if (!g_queue_is_empty(queue->chunks)) {
-            int len;
-            GString *raw_packet;
-            while ((raw_packet = g_queue_pop_head(con->server->recv_queue_raw->chunks)) != NULL) {
-                len += raw_packet->len;
-                g_queue_push_tail(queue->chunks, raw_packet);
-            }
-
-            queue->len += len;
-            g_message("%s:  append raw packets to send queue for con:%p", G_STRLOC, con);
-            network_queue *reserved_queue = con->server->recv_queue_raw;
-            con->server->recv_queue_raw = con->server->recv_queue;
-            con->server->recv_queue = reserved_queue;
-
-        } else {
-            network_queue *reserved_queue = con->client->send_queue;
-            con->client->send_queue = con->server->recv_queue_raw;
-            con->server->recv_queue_raw = con->server->recv_queue;;
-            con->server->recv_queue = reserved_queue;
-        }
-
-        if (is_finished) {
-            con->state = ST_SEND_QUERY_RESULT;
-            if (con->is_calc_found_rows) {
-                con->client->is_server_conn_reserved = 1;
-                g_debug("%s: set is_server_conn_reserved true for con:%p", G_STRLOC, con);
-            } else {
-                if (!con->is_prepared && !con->is_in_sess_context && !con->last_warning_met) {
-                    con->client->is_server_conn_reserved = 0;
-                    g_debug("%s: set is_server_conn_reserved false", G_STRLOC);
-                } else {
-                    con->client->is_server_conn_reserved = 1;
-                    g_debug("%s: set is_server_conn_reserved true", G_STRLOC);
-                }
-            }
-
-            proxy_plugin_con_t *st = con->plugin_con_state;
-            network_injection_queue_reset(st->injected.queries);
-            network_queue_clear(con->client->recv_queue);
-            network_mysqld_queue_reset(con->client);
-            *disp_flag = DISP_CONTINUE;
-        } else {
-            if (send_flag)  {
-                send_part_content_to_client(con);
-            }
-            WAIT_FOR_EVENT(con->server, EV_READ, &(con->read_timeout));
-            *disp_flag = DISP_STOP;
-        }
-        return NETWORK_SOCKET_SUCCESS;
+        return network_mysqld_process_select_resp(con, server, NULL, disp_flag);
     }
 
     if (!server->do_compress) {

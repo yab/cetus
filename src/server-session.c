@@ -149,7 +149,8 @@ process_read_event(network_mysqld_con *con, server_session_t *ss)
         g_message("%s:NET_RW_STATE_ERROR is set i:%d,b:%d", G_STRLOC, i, b);
     } else if (b >= 0) {
         sock->to_read = b;
-        sock->resp_len += b;
+        //sock->resp_len += b;
+        g_debug("%s: add resp len here:%d, fd:%d, con:%p", G_STRLOC, (int) sock->resp_len,  sock->fd, con);
         if (b == 0) {
             if (con->dist_tran) {
                 record_xa_log_for_mending(con, sock);
@@ -290,8 +291,11 @@ process_read_server(network_mysqld_con *con, server_session_t *ss)
         ret = NETWORK_SOCKET_SUCCESS;
         con->server_to_be_closed = 1;
         con->server_closed = 1;
+        g_debug("%s: finished flag:%d", G_STRLOC, is_finished);
     } else {
+        g_debug("%s: finished flag:%d", G_STRLOC, is_finished);
         ret = network_mysqld_read_mul_packets(con->srv, con, sock, &is_finished);
+        g_debug("%s: finished flag:%d", G_STRLOC, is_finished);
     }
 
     switch (ret) {
@@ -299,6 +303,7 @@ process_read_server(network_mysqld_con *con, server_session_t *ss)
         g_debug("%s: resp len:%d, attr adj state:%d", G_STRLOC, (int)sock->resp_len, con->attr_adj_state);
 
         if (is_finished) {
+            g_debug("%s: read finished here", G_STRLOC);
             set_conn_attr(con, ss->server);
             ss->state = NET_RW_STATE_FINISHED;
             ss->server->is_read_finished = 1;
@@ -321,6 +326,7 @@ process_read_server(network_mysqld_con *con, server_session_t *ss)
                     GString *packet;
                     while ((packet = g_queue_pop_head(ss->server->recv_queue->chunks)) != NULL) {
                         network_mysqld_queue_append_raw(con->client, con->client->send_queue, packet);
+                        g_debug("%s: network_mysqld_queue_append_raw packet here", G_STRLOC);
                     }
 
                     g_debug("%s: send_part_content_to_client", G_STRLOC);
@@ -328,6 +334,9 @@ process_read_server(network_mysqld_con *con, server_session_t *ss)
                     send_part_content_to_client(con);
                 }
                 server_sess_wait_for_event(ss, EV_READ, &con->read_timeout);
+                if (con->candidate_tcp_streamed) {
+                    return 0;
+                }
             }
         }
         break;
@@ -450,6 +459,7 @@ server_session_con_handler(int event_fd, short events, void *user_data)
             return;
         case NET_RW_STATE_READ:
             if (!process_read_server(con, ss)) {
+                g_debug("%s: stop here", G_STRLOC);
                 return;
             }
             break;
