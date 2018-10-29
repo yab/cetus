@@ -713,6 +713,7 @@ network_mysqld_con_get_packet(chassis *chas, network_socket *con)
     header.allocated_len = sizeof(header_str);
     header.len = 0;
 
+    g_debug("%s:queue_len:%d", G_STRLOC, (int) recv_queue_raw->len);
     /* read the packet len if the leading packet */
     if (!network_queue_peek_str(recv_queue_raw, NET_HEADER_SIZE, &header)) {
         g_debug("%s:wait for event", G_STRLOC);
@@ -730,7 +731,7 @@ network_mysqld_con_get_packet(chassis *chas, network_socket *con)
     /* move the packet from the raw queue to the recv-queue */
     if ((packet = network_queue_pop_str(recv_queue_raw, packet_len + NET_HEADER_SIZE, NULL))) {
 #if NETWORK_DEBUG_TRACE_IO
-        g_debug("%s:output for sock:%p, packet id:%d", G_STRLOC, con, packet_id);
+        g_debug("%s:output for sock:%p, packet id:%d, packet_len:%d", G_STRLOC, con, packet_id, packet_len);
         /* to trace the data we received from the socket, enable this */
         g_debug_hexdump(G_STRLOC, S(packet));
 #endif
@@ -1010,7 +1011,7 @@ network_mysqld_read_mul_packets(chassis G_GNUC_UNUSED *chas,
         if (*is_finished) {
             g_debug("%s: is finished true here", G_STRLOC);
         }
-        return  result;
+        return result;
     }
 
     enum enum_server_command orig_command = con->parse.command;
@@ -3886,7 +3887,13 @@ network_mysqld_process_select_resp(network_mysqld_con *con, network_socket *serv
     }
 #else
     if (is_finished) {
+        g_debug("%s: we come true, packet id:%d", G_STRLOC, server->last_packet_id);
         *finish_flag = 1;
+        con->state = ST_SEND_QUERY_RESULT;
+        network_mysqld_queue_reset(con->client);
+        network_queue_clear(con->client->recv_queue);
+        network_queue_clear(server->recv_queue_raw);
+        network_queue_clear(server->recv_queue);
     }
 #endif
 

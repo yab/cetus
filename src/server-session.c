@@ -149,7 +149,7 @@ process_read_event(network_mysqld_con *con, server_session_t *ss)
         g_message("%s:NET_RW_STATE_ERROR is set i:%d,b:%d", G_STRLOC, i, b);
     } else if (b >= 0) {
         sock->to_read = b;
-        //sock->resp_len += b;
+        sock->resp_len += b;
         g_debug("%s: add resp len here:%d, fd:%d, con:%p", G_STRLOC, (int) sock->resp_len,  sock->fd, con);
         if (b == 0) {
             if (con->dist_tran) {
@@ -335,6 +335,7 @@ process_read_server(network_mysqld_con *con, server_session_t *ss)
                 }
                 server_sess_wait_for_event(ss, EV_READ, &con->read_timeout);
                 if (con->candidate_tcp_streamed) {
+                    g_debug("%s: optimize here", G_STRLOC);
                     return 0;
                 }
             }
