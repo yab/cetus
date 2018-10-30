@@ -200,6 +200,7 @@ chassis_frontend_new(void)
     frontend->cetus_max_allowed_packet = MAX_ALLOWED_PACKET_DEFAULT;
     frontend->disable_dns_cache = 0;
 
+    frontend->is_tcp_stream_enabled = 1;
     frontend->group_replication_mode = 0;
     frontend->sql_log_bufsize = 0;
     frontend->sql_log_switch = NULL;
@@ -726,7 +727,6 @@ init_parameters(struct chassis_frontend_t *frontend, chassis *srv)
         srv->cache_index = g_queue_new();
     }
     srv->is_tcp_stream_enabled = frontend->is_tcp_stream_enabled;
-    srv->is_tcp_stream_enabled = 1;
     if (srv->is_tcp_stream_enabled) {
         g_message("%s:tcp stream enabled", G_STRLOC);
     }
