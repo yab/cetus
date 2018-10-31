@@ -801,7 +801,7 @@ static void remove_unix_socket_if_stale(chassis *chas)
             /* no matter if it does not exist */
             unlink(chas->unix_socket_name);
         }
-        fclose(p);
+        pclose(p);
     }
 }
 

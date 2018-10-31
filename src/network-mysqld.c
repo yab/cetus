@@ -3795,10 +3795,9 @@ analyze_stream(network_mysqld_con *con, network_socket *server, int *send_flag)
         g_message("%s: still has packets, execute here for con:%p", G_STRLOC, con);
         chunk = chunk->next;
         g_queue_unlink(queue->chunks, chunk);
-        GString *packet;
         int len = 0;
         do {
-            packet = chunk->data;
+            GString *packet = chunk->data;
             len += packet->len;
             network_queue_append(server->recv_queue, packet);
             chunk = chunk->next;
