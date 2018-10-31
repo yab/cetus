@@ -2707,12 +2707,9 @@ process_rw_write(network_mysqld_con *con, network_mysqld_con_state_t ostate, int
             g_debug("%s: set ST_CLOSE_SERVER for con:%p", G_STRLOC, con);
             con->state = ST_CLOSE_SERVER;
         }
-        if (con->client) {
-            network_mysqld_queue_reset(con->client);
-        }
-        if (con->server) {
-            network_mysqld_queue_reset(con->server);
-        }
+
+        network_mysqld_queue_reset(con->client);
+        network_mysqld_queue_reset(con->server);
 
         con->prepare_stmt_count--;
         g_debug("%s: conn:%p, sub, now prepare_stmt_count:%d", G_STRLOC, con, con->prepare_stmt_count);
@@ -3832,7 +3829,7 @@ network_mysqld_process_select_resp(network_mysqld_con *con, network_socket *serv
 
     network_queue *queue = con->client->send_queue;
     if (!g_queue_is_empty(queue->chunks)) {
-        int len;
+        int len = 0;
         GString *raw_packet;
         while ((raw_packet = g_queue_pop_head(server->recv_queue_raw->chunks)) != NULL) {
             len += raw_packet->len;
@@ -3951,7 +3948,7 @@ network_mysqld_read_rw_resp(network_mysqld_con *con, network_socket *server, int
                     G_STRLOC, con->client->default_db->str, server->default_db->str);
             if (con->parse.command == COM_QUERY) {
                 network_mysqld_com_query_result_t *query = con->parse.data;
-                if (query && query->query_status == MYSQLD_PACKET_ERR) {
+                if (query->query_status == MYSQLD_PACKET_ERR) {
                     disp_err_packet(con, &packet);
                 }
 

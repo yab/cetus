@@ -801,6 +801,7 @@ static void remove_unix_socket_if_stale(chassis *chas)
             /* no matter if it does not exist */
             unlink(chas->unix_socket_name);
         }
+        fclose(p);
     }
 }
 
@@ -833,7 +834,7 @@ check_allowed_running(chassis *chas)
     memset(&un, 0, sizeof(un));
     un.sun_family = AF_UNIX;
     const char *name  = chas->unix_socket_name;
-    strcpy(un.sun_path, name);
+    strncpy(un.sun_path, name, MAX_CMD_OR_PATH_LEN - 1);
     int len = offsetof(struct sockaddr_un, sun_path) + strlen(name);
 
     if (bind(fd, (struct sockaddr *)&un, len) < 0) {
