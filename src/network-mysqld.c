@@ -3891,7 +3891,6 @@ network_mysqld_process_select_resp(network_mysqld_con *con, network_socket *serv
         *finish_flag = 1;
         con->state = ST_SEND_QUERY_RESULT;
         network_mysqld_queue_reset(con->client);
-        network_queue_clear(con->client->recv_queue);
         network_queue_clear(server->recv_queue_raw);
         network_queue_clear(server->recv_queue);
     }
