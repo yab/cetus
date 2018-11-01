@@ -3592,14 +3592,14 @@ send_result_to_client(network_mysqld_con *con, network_mysqld_con_state_t ostate
 
 
 static gboolean
-analyze_stream(network_mysqld_con *con, network_socket *server, int *send_flag)
+fast_analyze_stream(network_mysqld_con *con, network_socket *server, int *send_flag)
 {
     int            total_output = 0;
     GList         *chunk;
     gboolean       need_more = FALSE;
     network_queue *queue = server->recv_queue_raw;
 
-    g_debug("%s: analyze_stream here:%d for con:%p, con->partically_record_left_cnt:%d",
+    g_debug("%s: fast_analyze_stream here:%d for con:%p, con->partically_record_left_cnt:%d",
             G_STRLOC, (int) con->last_payload_len, con, (int) con->partically_record_left_cnt);
 
     for (chunk = queue->chunks->head; chunk; chunk = chunk->next) {
@@ -3824,7 +3824,7 @@ static network_socket_retval_t
 network_mysqld_process_select_resp(network_mysqld_con *con, network_socket *server, int *finish_flag, int *disp_flag)
 {
     int send_flag = 0;
-    gboolean is_finished = analyze_stream(con, server, &send_flag);
+    gboolean is_finished = fast_analyze_stream(con, server, &send_flag);
 
     network_queue *queue = con->client->send_queue;
     if (!g_queue_is_empty(queue->chunks)) {

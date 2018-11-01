@@ -33,11 +33,11 @@ enum chassis_config_type_t {
 };
 
 struct chassis_config_t {
-    enum chassis_config_type_t type;
+    enum  chassis_config_type_t type;
     char *user;
     char *password;
     char *host;
-    int port;
+    int   port;
     char *schema;
 
 /* this mysql conn might be used in 2 threads,
@@ -47,8 +47,8 @@ struct chassis_config_t {
  */
     MYSQL *mysql_conn;
 
-    char *options_table;
-    char *options_filter;
+    char  *options_table;
+    char  *options_filter;
     GHashTable *options;
 
     GList *objects;

@@ -34,8 +34,6 @@
 #define RF_MAX_NAME_LEN 128
 struct config_object_t {
     char name[RF_MAX_NAME_LEN];
-
-    /* TODO: cache lock */
     char *cache;
     time_t mtime;
 };
