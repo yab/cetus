@@ -26,6 +26,7 @@
 #include "chassis-options-utils.h"
 #include "chassis-sql-log.h"
 #include "cetus-acl.h"
+#include "cetus-process-cycle.h"
 
 static gint save_setting(chassis *srv, gint *effected_rows);
 static void send_result(network_socket *client, gint ret, gint affected);
@@ -1481,6 +1482,7 @@ void admin_set_config(network_mysqld_con* con, char* key, char* value)
 
 static void admin_update_settings(int fd, short what, void *arg)
 {
+    g_message("%s call admin_update_settings", G_STRLOC);
     network_mysqld_con* con = arg;
     chassis *chas = con->srv;
     chassis_config_t* conf = con->srv->config_manager;
@@ -1493,6 +1495,9 @@ static void admin_update_settings(int fd, short what, void *arg)
 
     if (!conf->options_success_flag) {
         network_mysqld_con_send_error(con->client, C("Can't connect to remote or can't get config"));
+        con->is_admin_waiting_resp = 0;
+        send_admin_resp(con->srv, con);
+        g_message("%s call send_admin_resp over", G_STRLOC);
         return;
     }
 
@@ -1523,6 +1528,9 @@ static void admin_update_settings(int fd, short what, void *arg)
     g_list_free(options);
     network_mysqld_con_send_ok_full(con->client, affected_rows, 0,
                                     SERVER_STATUS_AUTOCOMMIT, 0);
+    con->is_admin_waiting_resp = 0;
+    send_admin_resp(con->srv, con);
+    g_message("%s call send_admin_resp over", G_STRLOC);
 }
 
 
@@ -1541,6 +1549,7 @@ static void admin_reload_settings(network_mysqld_con* con)
 {
     GList *options = admin_get_all_options(con->srv);
     check_and_update_options(con, con->srv->config_manager);
+    con->is_admin_waiting_resp = 1;
 }
 
 void admin_config_reload(network_mysqld_con* con, char* object)

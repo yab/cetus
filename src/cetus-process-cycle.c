@@ -537,6 +537,7 @@ gpointer retrieve_remote_config_mainloop(gpointer user_data) {
 static void
 cetus_remote_config_start_thread(chassis *chas)
 {
+    g_message("%s: cetus_remote_config_start_thread visited", G_STRLOC);
     if (chas->disable_threads) {
         g_message("monitor thread is disabled");
         return;
@@ -551,7 +552,7 @@ cetus_remote_config_start_thread(chassis *chas)
         g_clear_error(&error);
     }
 #else
-    new_thread = g_thread_new("monitor-thread", retrieve_remote_config_mainloop, chas);
+    new_thread = g_thread_new("remote-config-thread", retrieve_remote_config_mainloop, chas);
     if (new_thread == NULL) {
         g_critical("%s:Create thread error.", G_STRLOC);
     }
@@ -784,7 +785,6 @@ cetus_channel_t *retrieve_admin_resp(network_mysqld_con *con)
 }
 
 
-static 
 void send_admin_resp(chassis *cycle, network_mysqld_con *con)
 {
     g_message("%s:call send_admin_resp, cetus_process_slot:%d", G_STRLOC, cetus_process_slot);
@@ -830,7 +830,9 @@ process_admin_sql(cetus_cycle_t *cycle, cetus_channel_t *ch)
         func = plugin->con_exectute_sql;
         retval = (*func) (cycle, con);
         g_debug("%s: call admin:%d", G_STRLOC, retval);
-        send_admin_resp(cycle, con);
+        if (!con->is_admin_waiting_resp) {
+            send_admin_resp(cycle, con);
+        }
     }
 }
 
