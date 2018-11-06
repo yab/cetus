@@ -520,6 +520,43 @@ cetus_master_process_exit(cetus_cycle_t *cycle)
     exit(0);
 }
 
+gpointer retrieve_remote_config_mainloop(gpointer user_data) {
+    chassis *chas = user_data;
+    chassis_config_t* conf = chas->config_manager;
+
+    while(!chassis_is_shutdown()) {
+        if (!conf->options_update_flag) {
+            usleep(1000);
+        } else {
+            chassis_config_load_options_mysql(conf);
+        }
+    }
+}
+
+
+static void
+cetus_remote_config_start_thread(chassis *chas)
+{
+    if (chas->disable_threads) {
+        g_message("monitor thread is disabled");
+        return;
+    }
+
+    GThread *new_thread = NULL;
+#if !GLIB_CHECK_VERSION(2, 32, 0)
+    GError *error = NULL;
+    new_thread = g_thread_create(retrieve_remote_config_mainloop, chas, TRUE, &error);
+    if (new_thread == NULL && error != NULL) {
+        g_critical("%s:Create thread error: %s", G_STRLOC, error->message);
+        g_clear_error(&error);
+    }
+#else
+    new_thread = g_thread_new("monitor-thread", retrieve_remote_config_mainloop, chas);
+    if (new_thread == NULL) {
+        g_critical("%s:Create thread error.", G_STRLOC);
+    }
+#endif
+}
 
 static void
 cetus_worker_process_cycle(cetus_cycle_t *cycle, void *data)
@@ -598,6 +635,7 @@ cetus_worker_process_cycle(cetus_cycle_t *cycle, void *data)
 #endif
 
     cetus_monitor_start_thread(cycle->priv->monitor, cycle);
+    cetus_remote_config_start_thread(cycle);
     cetus_sql_log_start_thread_once(cycle->sql_mgr);
 
 

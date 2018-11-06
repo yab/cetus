@@ -33,11 +33,14 @@ enum chassis_config_type_t {
 };
 
 struct chassis_config_t {
+    unsigned int port:16;
+    unsigned int options_success_flag:1;
+    unsigned int options_update_flag:1;
+    unsigned int index:1;
     enum  chassis_config_type_t type;
     char *user;
     char *password;
     char *host;
-    int   port;
     char *schema;
 
 /* this mysql conn might be used in 2 threads,
@@ -49,7 +52,8 @@ struct chassis_config_t {
 
     char  *options_table;
     char  *options_filter;
-    GHashTable *options;
+    GHashTable *options_one;
+    GHashTable *options_two;
 
     GList *objects;
 };
@@ -68,6 +72,7 @@ chassis_config_t *chassis_config_from_local_dir(char *dir, char *conf_file);
 void chassis_config_free(chassis_config_t *);
 
 gint chassis_config_reload_options(chassis_config_t *conf);
+gboolean chassis_config_load_options_mysql(chassis_config_t *conf);
 
 gboolean chassis_config_set_remote_options(chassis_config_t *conf, gchar* key, gchar* value);
 

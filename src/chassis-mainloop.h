@@ -213,6 +213,7 @@ struct chassis {
 
     gint group_replication_mode;
 
+    struct event remote_config_event;
     struct event auto_create_conns_event;
     struct event update_timer_event;
 

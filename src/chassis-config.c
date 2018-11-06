@@ -248,8 +248,10 @@ chassis_config_free(chassis_config_t *p)
         g_free(p->options_table);
     if (p->options_filter)
         g_free(p->options_filter);
-    if (p->options)
-        g_hash_table_destroy(p->options);
+    if (p->options_one)
+        g_hash_table_destroy(p->options_one);
+    if (p->options_two)
+        g_hash_table_destroy(p->options_two);
     if (p->objects)
         g_list_free_full(p->objects, (GDestroyNotify) config_object_free);
     if (p->mysql_conn) {
@@ -261,7 +263,7 @@ chassis_config_free(chassis_config_t *p)
     g_free(p);
 }
 
-static gboolean
+gboolean
 chassis_config_load_options_mysql(chassis_config_t *conf)
 {
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
@@ -279,21 +281,40 @@ chassis_config_load_options_mysql(chassis_config_t *conf)
     if (!result)
         goto mysql_error;
 
-    if (!conf->options)
-        conf->options = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
-    else
-        g_hash_table_remove_all(conf->options);
+    GHashTable *options;
+    if (conf->index == 0) {
+        if (!conf->options_one)
+            conf->options_one = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+        else
+            g_hash_table_remove_all(conf->options_one);
+
+        options = conf->options_one;
+
+    } else {
+        if (!conf->options_two)
+            conf->options_two = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+        else
+            g_hash_table_remove_all(conf->options_two);
+
+        options = conf->options_two;
+    }
 
     MYSQL_ROW row;
     while ((row = mysql_fetch_row(result))) {
-        g_hash_table_insert(conf->options, g_strdup(row[0]), g_strdup(row[1]));
+        g_hash_table_insert(options, g_strdup(row[0]), g_strdup(row[1]));
     }
     mysql_free_result(result);
+
+    conf->options_update_flag = 0;
+    conf->options_success_flag = 1;
     return TRUE;
 
   mysql_error:
+    conf->options_success_flag = 0;
+    conf->options_update_flag = 0;
     return FALSE;
 }
+
 
 gboolean
 chassis_config_set_remote_options(chassis_config_t *conf, gchar* key, gchar* value)
@@ -334,9 +355,13 @@ gint chassis_config_reload_options(chassis_config_t *conf)
 GHashTable *
 chassis_config_get_options(chassis_config_t *conf)
 {
-    if (!conf->options)
-        chassis_config_reload_options(conf);
-    return conf->options;
+    GHashTable *options;
+    if (conf->index == 0) {
+        options = conf->options_one;
+    } else {
+        options = conf->options_two;
+    }
+    return options;
 }
 
 static void
@@ -547,8 +572,19 @@ gboolean
 chassis_config_parse_options(chassis_config_t *conf, GList *entries)
 {
     GHashTable *opts_table = chassis_config_get_options(conf);
-    if (!opts_table)
+
+    if (!opts_table) {
+        chassis_config_reload_options(conf);
+        if (conf->index == 0) {
+            opts_table = conf->options_one;
+        } else {
+            opts_table = conf->options_two;
+        }
+    }
+
+    if (!opts_table) {
         return FALSE;
+    }
 
     GList *l;
     for (l = entries; l; l = l->next) {

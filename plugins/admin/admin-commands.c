@@ -1479,20 +1479,25 @@ void admin_set_config(network_mysqld_con* con, char* key, char* value)
     }
 }
 
-static void admin_reload_settings(network_mysqld_con* con)
+static void admin_update_settings(int fd, short what, void *arg)
 {
-    GList *options = admin_get_all_options(con->srv);
-    gint ret = chassis_config_reload_options(con->srv->config_manager);
-    if (ret == -1) {
-        network_mysqld_con_send_error(con->client,
-                    C("Can't connect to remote or can't get config"));
-                return;
-    }
-    if (ret == -2) {
-        network_mysqld_con_send_error(con->client,
-            C("Can't load options, only support remote config"));
+    network_mysqld_con* con = arg;
+    chassis *chas = con->srv;
+    chassis_config_t* conf = con->srv->config_manager;
+
+    if (conf->options_update_flag) {
+        struct timeval check_interval = {0, 5000};
+        chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
         return;
     }
+
+    if (!conf->options_success_flag) {
+        network_mysqld_con_send_error(con->client, C("Can't connect to remote or can't get config"));
+        return;
+    }
+
+    GList *options = admin_get_all_options(con->srv);
+
     GHashTable *opts_table = chassis_config_get_options(con->srv->config_manager);
 
     int affected_rows = 0;
@@ -1518,6 +1523,24 @@ static void admin_reload_settings(network_mysqld_con* con)
     g_list_free(options);
     network_mysqld_con_send_ok_full(con->client, affected_rows, 0,
                                     SERVER_STATUS_AUTOCOMMIT, 0);
+}
+
+
+static void check_and_update_options(network_mysqld_con* con, chassis_config_t *conf)
+{
+    conf->options_update_flag = 1;
+
+    chassis* chas = con->srv;
+
+    evtimer_set(&chas->remote_config_event, admin_update_settings, con);
+    struct timeval check_interval = {0, 5000};
+    chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+}
+
+static void admin_reload_settings(network_mysqld_con* con)
+{
+    GList *options = admin_get_all_options(con->srv);
+    check_and_update_options(con, con->srv->config_manager);
 }
 
 void admin_config_reload(network_mysqld_con* con, char* object)
