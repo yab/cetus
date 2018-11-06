@@ -162,7 +162,7 @@ void admin_select_all_backends(network_mysqld_con* con)
         g_ptr_array_add(row, g_strdup(states[(int) (backend->state)]));
         g_ptr_array_add(row, g_strdup(types[(int) (backend->type)]));
 
-        sprintf(buffer, "%d", backend->slave_delay_msec);
+        sprintf(buffer, "%d", (backend->slave_delay_msec >= 10)  ? (backend->slave_delay_msec - 10) : 0);
         g_ptr_array_add(row, (backend->type == BACKEND_TYPE_RO && chas->check_slave_delay == 1) ? g_strdup(buffer) : NULL);
 
         sprintf(buffer, "%d", backend->pool->cur_idle_connections); 
@@ -1420,7 +1420,7 @@ void admin_get_config(network_mysqld_con* con, char* p)
     } else if (strcasecmp(p, "pool") == 0) {
         snprintf(buf1, 32, "%d", chas->mid_idle_connections);
         snprintf(buf2, 32, "%d", chas->max_idle_connections);
-        snprintf(buf3, 32, "%d", chas->max_resp_len);
+        snprintf(buf3, 32, "%lld", chas->max_resp_len);
         snprintf(buf4, 32, "%d", chas->master_preferred);
         APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.default_pool_size", buf1);
         APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.max_pool_size", buf2);
