@@ -2590,7 +2590,6 @@ network_mysqld_shard_plugin_apply_config(chassis *chas, chassis_plugin_config *c
     g_free(shard_json);
 
     g_assert(chas->priv->monitor);
-    cetus_monitor_register_object(chas->priv->monitor, "sharding", sharding_conf_reload_callback, chas);
 
     /**
      * call network_mysqld_con_accept() with this connection when we are done

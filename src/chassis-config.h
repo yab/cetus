@@ -88,7 +88,7 @@ gboolean chassis_config_write_object(chassis_config_t *, const char *name, const
 
 gboolean chassis_config_is_object_outdated(chassis_config_t *, const char *name);
 
-void chassis_config_update_object_cache(chassis_config_t *, const char *name);
+void chassis_config_empty_object_cache(chassis_config_t *, const char *name);
 
 char *chassis_config_get_id(chassis_config_t *);
 

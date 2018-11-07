@@ -407,7 +407,9 @@ chassis_config_mysql_query_object(chassis_config_t *conf,
     g_debug("%s:reach mysql_query", G_STRLOC);
     g_assert(conf->type == CHASSIS_CONF_MYSQL);
     if (object->cache) {
-        *json_res = g_strdup(object->cache);
+        if (json_res) {
+            *json_res = g_strdup(object->cache);
+        }
         return TRUE;
     }
 
@@ -440,7 +442,9 @@ chassis_config_mysql_query_object(chassis_config_t *conf,
         goto mysql_error;
     }
 
-    *json_res = g_strdup(row[0]);
+    if (json_res) {
+        *json_res = g_strdup(row[0]);
+    }
     time_t mt = chassis_epoch_from_string(row[1], NULL);
 
     chassis_config_object_set_cache(object, row[0], mt);
@@ -455,7 +459,9 @@ chassis_config_local_query_object(chassis_config_t *conf,
                                   struct config_object_t *object, const char *name, char **json_res)
 {
     if (object->cache) {
-        *json_res = g_strdup(object->cache);
+        if (json_res) {
+            *json_res = g_strdup(object->cache);
+        }
         return TRUE;
     }
 
@@ -473,7 +479,9 @@ chassis_config_local_query_object(chassis_config_t *conf,
         return FALSE;
     }
 
-    *json_res = buffer;
+    if (json_res) {
+        *json_res = g_strdup(buffer);
+    }
 
     GStatBuf sta;
     if (g_stat(object_file, &sta) == 0) {
@@ -499,8 +507,6 @@ chassis_config_query_object(chassis_config_t *conf, const char *name, char **jso
         } else {
             conf->objects_two = g_list_append(conf->objects_two, object);
         }
-    } else {
-        g_critical(G_STRLOC ": object is not nil, name:%s", name);
     }
 
     g_debug(G_STRLOC ": config type:%d", conf->type);
@@ -715,18 +721,13 @@ chassis_config_is_object_outdated(chassis_config_t *conf, const char *name)
 }
 
 void
-chassis_config_update_object_cache(chassis_config_t *conf, const char *name)
+chassis_config_empty_object_cache(chassis_config_t *conf, const char *name)
 {
     struct config_object_t *object = chassis_config_get_object(conf, name);
     if (!object)
         return;
     time_t now = time(0);
     chassis_config_object_set_cache(object, NULL, now);
-    char *str = NULL;
-    chassis_config_query_object(conf, name, &str);
-    if (str) {                  /* we just want to trigger query&caching, result is not needed */
-        g_free(str);
-    }
 }
 
 #define MAX_ID_SIZE 127

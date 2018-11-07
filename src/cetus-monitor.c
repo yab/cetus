@@ -785,23 +785,3 @@ cetus_monitor_free(cetus_monitor_t *monitor)
     g_free(monitor);
 }
 
-void
-cetus_monitor_register_object(cetus_monitor_t *monitor, const char *name, monitor_callback_fn func, void *arg)
-{
-    GList *l;
-    struct monitored_object_t *object = NULL;
-    for (l = monitor->registered_objects; l; l = l->next) {
-        struct monitored_object_t *ob = l->data;
-        if (strcmp(ob->name, name) == 0) {
-            object = ob;
-            break;
-        }
-    }
-    if (!object) {
-        object = g_new0(struct monitored_object_t, 1);
-        strncpy(object->name, name, MON_MAX_NAME_LEN - 1);
-        monitor->registered_objects = g_list_append(monitor->registered_objects, object);
-    }
-    object->func = func;
-    object->arg = arg;
-}

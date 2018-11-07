@@ -1562,7 +1562,7 @@ void admin_config_reload(network_mysqld_con* con, char* object)
         return admin_reload_settings(con);
     } else if (strcasecmp(object, "user")==0) {
         chassis_config_t* conf = con->srv->config_manager;
-        chassis_config_update_object_cache(conf, "users");
+        chassis_config_empty_object_cache(conf, "users");
 
         gboolean ok = cetus_users_read_json(con->srv->priv->users, conf);
         if (ok) {
