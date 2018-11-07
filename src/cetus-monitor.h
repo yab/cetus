@@ -29,7 +29,6 @@ typedef struct cetus_monitor_t cetus_monitor_t;
 typedef enum {
     MONITOR_TYPE_CHECK_ALIVE,
     MONITOR_TYPE_CHECK_DELAY,
-    MONITOR_TYPE_CHECK_CONFIG
 } monitor_type_t;
 
 typedef void (*monitor_callback_fn) (int, short, void *);

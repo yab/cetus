@@ -528,7 +528,37 @@ gpointer retrieve_remote_config_mainloop(gpointer user_data) {
         if (!conf->options_update_flag) {
             usleep(1000);
         } else {
-            chassis_config_load_options_mysql(conf);
+            switch (chas->asynchronous_type) {
+                case ASYNCHRONOUS_RELOAD:
+                    chassis_config_load_options_mysql(conf);
+                    break;
+                case ASYNCHRONOUS_RELOAD_VARIABLES:
+                    //chassis_config_reload_variables();
+                    break;
+                case ASYNCHRONOUS_RELOAD_USER:
+                    //chassis_config_mysql_query_object();
+                    break;
+                case ASYNCHRONOUS_DELETE_USER_PASSWORD:
+                    //chassis_config_mysql_write_object(conf, object, name, json);
+                    break;
+                case ASYNCHRONOUS_UPDATE_USER_PASSWORD:
+                    //chassis_config_mysql_write_object(conf, object, name, json);
+                    break;
+                case ASYNCHRONOUS_CREATE_SINGLE_TABLE:
+                    //chassis_config_mysql_write_object(conf, object, name, json);
+                    break;
+                case ASYNCHRONOUS_CREATE_SHARD_TABLE:
+                    //chassis_config_mysql_write_object(conf, object, name, json);
+                    break;
+                case ASYNCHRONOUS_CREATE_VDB:
+                    //chassis_config_mysql_write_object(conf, object, name, json);
+                    break;
+                case ASYNCHRONOUS_SET_CONFIG:
+                    //chassis_config_set_remote_options();
+                    break;
+                default:
+                    break;
+            }
         }
     }
 }

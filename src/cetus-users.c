@@ -310,11 +310,3 @@ cetus_users_contains(cetus_users_t *users, const char *user_name)
     return g_hash_table_lookup(users->records, user_name) ? TRUE : FALSE;
 }
 
-void
-cetus_users_reload_callback(int fd, short what, void *arg)
-{
-    cetus_users_t *users = arg;
-    gboolean ok = cetus_users_read_json(users, users->conf_manager);
-    if (!ok)
-        g_warning("reloading users failed");
-}

@@ -36,7 +36,8 @@ struct chassis_config_t {
     unsigned int port:16;
     unsigned int options_success_flag:1;
     unsigned int options_update_flag:1;
-    unsigned int index:1;
+    unsigned int options_index:1;
+    unsigned int objects_index:1;
     enum  chassis_config_type_t type;
     char *user;
     char *password;
@@ -55,7 +56,8 @@ struct chassis_config_t {
     GHashTable *options_one;
     GHashTable *options_two;
 
-    GList *objects;
+    GList *objects_one;
+    GList *objects_two;
 };
 
 /**

@@ -244,7 +244,6 @@ network_mysqld_init(chassis *srv)
     srv->priv = network_mysqld_priv_init();
 
     cetus_users_read_json(srv->priv->users, srv->config_manager);
-    cetus_monitor_register_object(srv->priv->monitor, "users", cetus_users_reload_callback, srv->priv->users);
     cetus_variables_init_stats(&srv->priv->stats_variables, srv);
 
 #ifdef HAVE_OPENSSL

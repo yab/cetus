@@ -252,8 +252,10 @@ chassis_config_free(chassis_config_t *p)
         g_hash_table_destroy(p->options_one);
     if (p->options_two)
         g_hash_table_destroy(p->options_two);
-    if (p->objects)
-        g_list_free_full(p->objects, (GDestroyNotify) config_object_free);
+    if (p->objects_one)
+        g_list_free_full(p->objects_one, (GDestroyNotify) config_object_free);
+    if (p->objects_two)
+        g_list_free_full(p->objects_two, (GDestroyNotify) config_object_free);
     if (p->mysql_conn) {
         mysql_close(p->mysql_conn);
     }
@@ -282,7 +284,7 @@ chassis_config_load_options_mysql(chassis_config_t *conf)
         goto mysql_error;
 
     GHashTable *options;
-    if (conf->index == 0) {
+    if (conf->options_index == 0) {
         if (!conf->options_one)
             conf->options_one = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
         else
@@ -356,7 +358,7 @@ GHashTable *
 chassis_config_get_options(chassis_config_t *conf)
 {
     GHashTable *options;
-    if (conf->index == 0) {
+    if (conf->options_index == 0) {
         options = conf->options_one;
     } else {
         options = conf->options_two;
@@ -382,7 +384,15 @@ static struct config_object_t *
 chassis_config_get_object(chassis_config_t *conf, const char *name)
 {
     GList *l = NULL;
-    for (l = conf->objects; l; l = l->next) {
+    GList *objects;
+
+    if (conf->objects_index == 0) {
+        objects = conf->objects_one;
+    } else {
+        objects = conf->objects_two;
+    }
+
+    for (l = objects; l; l = l->next) {
         struct config_object_t *ob = l->data;
         if (strcmp(ob->name, name) == 0)
             return ob;
@@ -483,7 +493,12 @@ chassis_config_query_object(chassis_config_t *conf, const char *name, char **jso
     if (!object) {
         object = g_new0(struct config_object_t, 1);
         strncpy(object->name, name, RF_MAX_NAME_LEN - 1);
-        conf->objects = g_list_append(conf->objects, object);
+
+        if (conf->objects_index == 0) {
+            conf->objects_one = g_list_append(conf->objects_one, object);
+        } else {
+            conf->objects_two = g_list_append(conf->objects_two, object);
+        }
     } else {
         g_critical(G_STRLOC ": object is nil, name:%s", name);
     }
@@ -556,7 +571,12 @@ chassis_config_write_object(chassis_config_t *conf, const char *name, const char
     if (!object) {
         object = g_new0(struct config_object_t, 1);
         strncpy(object->name, name, RF_MAX_NAME_LEN - 1);
-        conf->objects = g_list_append(conf->objects, object);
+
+        if (conf->objects_index == 0) {
+            conf->objects_one = g_list_append(conf->objects_one, object);
+        } else {
+            conf->objects_two = g_list_append(conf->objects_two, object);
+        }
     }
     switch (conf->type) {
     case CHASSIS_CONF_MYSQL:
@@ -575,7 +595,7 @@ chassis_config_parse_options(chassis_config_t *conf, GList *entries)
 
     if (!opts_table) {
         chassis_config_reload_options(conf);
-        if (conf->index == 0) {
+        if (conf->options_index == 0) {
             opts_table = conf->options_one;
         } else {
             opts_table = conf->options_two;
