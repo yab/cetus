@@ -243,7 +243,7 @@ network_mysqld_init(chassis *srv)
     srv->priv_finally_free_shared = network_mysqld_priv_finally_free_shared;
     srv->priv = network_mysqld_priv_init();
 
-    cetus_users_read_json(srv->priv->users, srv->config_manager);
+    cetus_users_read_json(srv->priv->users, srv->config_manager, 0);
     cetus_variables_init_stats(&srv->priv->stats_variables, srv);
 
 #ifdef HAVE_OPENSSL

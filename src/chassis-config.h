@@ -82,13 +82,11 @@ GHashTable *chassis_config_get_options(chassis_config_t *);
 
 gboolean chassis_config_parse_options(chassis_config_t *, GList *entries);
 
-gboolean chassis_config_query_object(chassis_config_t *, const char *name, char **json);
+gboolean chassis_config_query_object(chassis_config_t *, const char *name, char **json, int refresh);
 
 gboolean chassis_config_write_object(chassis_config_t *, const char *name, const char *json);
 
 gboolean chassis_config_is_object_outdated(chassis_config_t *, const char *name);
-
-void chassis_config_empty_object_cache(chassis_config_t *, const char *name);
 
 char *chassis_config_get_id(chassis_config_t *);
 

@@ -406,12 +406,6 @@ chassis_config_mysql_query_object(chassis_config_t *conf,
 {
     g_debug("%s:reach mysql_query", G_STRLOC);
     g_assert(conf->type == CHASSIS_CONF_MYSQL);
-    if (object->cache) {
-        if (json_res) {
-            *json_res = g_strdup(object->cache);
-        }
-        return TRUE;
-    }
 
     gboolean status = FALSE;
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
@@ -458,13 +452,6 @@ static gboolean
 chassis_config_local_query_object(chassis_config_t *conf,
                                   struct config_object_t *object, const char *name, char **json_res)
 {
-    if (object->cache) {
-        if (json_res) {
-            *json_res = g_strdup(object->cache);
-        }
-        return TRUE;
-    }
-
     char basename[128] = { 0 };
     snprintf(basename, sizeof(basename), "%s.%s", name, "json");
     char *object_file = g_build_filename(conf->schema, basename, NULL);
@@ -495,7 +482,7 @@ chassis_config_local_query_object(chassis_config_t *conf,
 
 /* select a table, make it into a json */
 gboolean
-chassis_config_query_object(chassis_config_t *conf, const char *name, char **json_res)
+chassis_config_query_object(chassis_config_t *conf, const char *name, char **json_res, int refresh)
 {
     struct config_object_t *object = chassis_config_get_object(conf, name);
     if (!object) {
@@ -506,6 +493,18 @@ chassis_config_query_object(chassis_config_t *conf, const char *name, char **jso
             conf->objects_one = g_list_append(conf->objects_one, object);
         } else {
             conf->objects_two = g_list_append(conf->objects_two, object);
+        }
+    } else {
+        if (refresh) {
+            time_t now = time(0);
+            chassis_config_object_set_cache(object, NULL, now);
+        } else {
+            if (object->cache) {
+                if (json_res) {
+                    *json_res = g_strdup(object->cache);
+                }
+                return TRUE;
+            }
         }
     }
 
@@ -718,16 +717,6 @@ chassis_config_is_object_outdated(chassis_config_t *conf, const char *name)
     default:
         return FALSE;
     }
-}
-
-void
-chassis_config_empty_object_cache(chassis_config_t *conf, const char *name)
-{
-    struct config_object_t *object = chassis_config_get_object(conf, name);
-    if (!object)
-        return;
-    time_t now = time(0);
-    chassis_config_object_set_cache(object, NULL, now);
 }
 
 #define MAX_ID_SIZE 127

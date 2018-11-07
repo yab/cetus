@@ -2684,7 +2684,7 @@ network_mysqld_proxy_plugin_apply_config(chassis *chas, chassis_plugin_config *c
 
     sql_filter_vars_load_default_rules();
     char* var_json = NULL;
-    if (chassis_config_query_object(chas->config_manager, "variables", &var_json)) {
+    if (chassis_config_query_object(chas->config_manager, "variables", &var_json, 0)) {
         g_message("reading variable rules");
         if (sql_filter_vars_load_str_rules(var_json) == FALSE) {
             g_warning("variable rule load error");

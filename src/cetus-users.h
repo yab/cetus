@@ -39,7 +39,7 @@ cetus_users_t *cetus_users_new();
 
 void cetus_users_free(cetus_users_t *users);
 
-gboolean cetus_users_read_json(cetus_users_t *users, chassis_config_t *);
+gboolean cetus_users_read_json(cetus_users_t *users, chassis_config_t *, int refresh);
 
 gboolean cetus_users_update_record(cetus_users_t *users, const char *user, const char *pass, enum cetus_pwd_type type);
 

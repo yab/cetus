@@ -2507,25 +2507,6 @@ network_mysqld_shard_plugin_get_options(chassis_plugin_config *config)
     return opts.options;
 }
 
-void
-sharding_conf_reload_callback(int fd, short what, void *arg)
-{
-    chassis *chas = arg;
-    char *shard_json = NULL;
-    gboolean ok = chassis_config_query_object(chas->config_manager,
-                                              "sharding", &shard_json);
-    if (!ok || !shard_json) {
-        g_critical("error on sharding configuration reloading.");
-    }
-    int num_groups = chas->priv->backends->groups->len;
-    if (shard_conf_load(shard_json, num_groups)) {
-        g_message("sharding config is updated");
-    } else {
-        g_warning("sharding config update failed");
-    }
-    g_free(shard_json);
-}
-
 /**
  * init the plugin with the parsed config
  */
@@ -2582,7 +2563,7 @@ network_mysqld_shard_plugin_apply_config(chassis *chas, chassis_plugin_config *c
 
     char *shard_json = NULL;
     gboolean ok = chassis_config_query_object(chas->config_manager,
-                                              "sharding", &shard_json);
+                                              "sharding", &shard_json, 0);
     if (!ok || !shard_json || !shard_conf_load(shard_json, g->backends->groups->len)) {
         g_critical("sharding configuration load error, exit program.");
         exit(0);
@@ -2614,7 +2595,7 @@ network_mysqld_shard_plugin_apply_config(chassis *chas, chassis_plugin_config *c
 
     sql_filter_vars_shard_load_default_rules();
     char* var_json = NULL;
-    if (chassis_config_query_object(chas->config_manager, "variables", &var_json)) {
+    if (chassis_config_query_object(chas->config_manager, "variables", &var_json, 0)) {
         g_message("reading variable rules");
         if (sql_filter_vars_load_str_rules(var_json) == FALSE) {
             g_warning("variable rule load error");
