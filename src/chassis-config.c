@@ -500,7 +500,7 @@ chassis_config_query_object(chassis_config_t *conf, const char *name, char **jso
             conf->objects_two = g_list_append(conf->objects_two, object);
         }
     } else {
-        g_critical(G_STRLOC ": object is nil, name:%s", name);
+        g_critical(G_STRLOC ": object is not nil, name:%s", name);
     }
 
     g_debug(G_STRLOC ": config type:%d", conf->type);
