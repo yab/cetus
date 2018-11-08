@@ -84,6 +84,10 @@ gboolean chassis_config_parse_options(chassis_config_t *, GList *entries);
 
 gboolean chassis_config_query_object(chassis_config_t *, const char *name, char **json, int refresh);
 
+struct config_object_t *chassis_config_get_object(chassis_config_t *conf, const char *name);
+
+gboolean chassis_config_mysql_query_object(chassis_config_t *conf, struct config_object_t *object, const char *name);
+
 gboolean chassis_config_write_object(chassis_config_t *, const char *name, const char *json);
 
 gboolean chassis_config_is_object_outdated(chassis_config_t *, const char *name);

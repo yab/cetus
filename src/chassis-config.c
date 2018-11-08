@@ -380,7 +380,7 @@ chassis_config_object_set_cache(struct config_object_t *ob, const char *str, tim
     ob->mtime = mt;
 }
 
-static struct config_object_t *
+struct config_object_t *
 chassis_config_get_object(chassis_config_t *conf, const char *name)
 {
     GList *l = NULL;
@@ -400,14 +400,13 @@ chassis_config_get_object(chassis_config_t *conf, const char *name)
     return NULL;
 }
 
-static gboolean
+gboolean
 chassis_config_mysql_query_object(chassis_config_t *conf,
-                                  struct config_object_t *object, const char *name, char **json_res)
+                                  struct config_object_t *object, const char *name)
 {
     g_debug("%s:reach mysql_query", G_STRLOC);
     g_assert(conf->type == CHASSIS_CONF_MYSQL);
 
-    gboolean status = FALSE;
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
 
     if (!conn) {
@@ -436,16 +435,13 @@ chassis_config_mysql_query_object(chassis_config_t *conf,
         goto mysql_error;
     }
 
-    if (json_res) {
-        *json_res = g_strdup(row[0]);
-    }
     time_t mt = chassis_epoch_from_string(row[1], NULL);
 
     chassis_config_object_set_cache(object, row[0], mt);
     mysql_free_result(result);
-    status = TRUE;
+    return TRUE;
   mysql_error:
-    return status;
+    return FALSE;
 }
 
 static gboolean
@@ -500,9 +496,7 @@ chassis_config_query_object(chassis_config_t *conf, const char *name, char **jso
             chassis_config_object_set_cache(object, NULL, now);
         } else {
             if (object->cache) {
-                if (json_res) {
-                    *json_res = g_strdup(object->cache);
-                }
+                *json_res = g_strdup(object->cache);
                 return TRUE;
             }
         }
@@ -511,7 +505,20 @@ chassis_config_query_object(chassis_config_t *conf, const char *name, char **jso
     g_debug(G_STRLOC ": config type:%d", conf->type);
     switch (conf->type) {
     case CHASSIS_CONF_MYSQL:
-        return chassis_config_mysql_query_object(conf, object, name, json_res);
+        if (refresh) {
+            return FALSE;
+        } else {
+            if (chassis_config_mysql_query_object(conf, object, name)) {
+                if (object->cache) {
+                    *json_res = g_strdup(object->cache);
+                    return TRUE;
+                } else {
+                    return FALSE;
+                }
+            }  else {
+                return FALSE;
+            }
+        }
     case CHASSIS_CONF_LOCAL:
         return chassis_config_local_query_object(conf, object, name, json_res);
     default:

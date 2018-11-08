@@ -540,6 +540,23 @@ cetus_master_process_exit(cetus_cycle_t *cycle)
     exit(0);
 }
 
+static void retrieve_user_from_remote(chassis_config_t* conf)
+{
+    struct config_object_t *object = chassis_config_get_object(conf, "user");
+    if  (object) {
+        if (chassis_config_mysql_query_object(conf, object, "user")) {
+            conf->options_update_flag = 0;
+            conf->options_success_flag = 1;
+        } else {
+            conf->options_success_flag = 0;
+            conf->options_update_flag = 0;
+        }
+    } else {
+        conf->options_success_flag = 0;
+        conf->options_update_flag = 0;
+    }
+}
+
 gpointer retrieve_remote_config_mainloop(gpointer user_data) {
     chassis *chas = user_data;
     chassis_config_t* conf = chas->config_manager;
@@ -556,7 +573,7 @@ gpointer retrieve_remote_config_mainloop(gpointer user_data) {
                     //chassis_config_reload_variables();
                     break;
                 case ASYNCHRONOUS_RELOAD_USER:
-                    //chassis_config_mysql_query_object();
+                    retrieve_user_from_remote(conf);
                     break;
                 case ASYNCHRONOUS_DELETE_USER_PASSWORD:
                     //chassis_config_mysql_write_object(conf, object, name, json);

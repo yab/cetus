@@ -1534,21 +1534,77 @@ static void admin_update_settings(int fd, short what, void *arg)
 }
 
 
-static void check_and_update_options(network_mysqld_con* con, chassis_config_t *conf)
+static void admin_reload_settings(network_mysqld_con* con)
 {
-    conf->options_update_flag = 1;
-
     chassis* chas = con->srv;
+    chassis_config_t *conf = chas->config_manager;
+
+    conf->options_update_flag = 1;
+    chas->asynchronous_type = ASYNCHRONOUS_RELOAD;
 
     evtimer_set(&chas->remote_config_event, admin_update_settings, con);
     struct timeval check_interval = {0, 5000};
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+
+    con->is_admin_waiting_resp = 1;
 }
 
-static void admin_reload_settings(network_mysqld_con* con)
+static void admin_update_user(int fd, short what, void *arg)
 {
-    GList *options = admin_get_all_options(con->srv);
-    check_and_update_options(con, con->srv->config_manager);
+    g_message("%s call admin_update_user", G_STRLOC);
+    network_mysqld_con* con = arg;
+    chassis *chas = con->srv;
+    chassis_config_t* conf = con->srv->config_manager;
+
+    if (conf->options_update_flag) {
+        struct timeval check_interval = {0, 5000};
+        chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        return;
+    }
+
+    if (!conf->options_success_flag) {
+        network_mysqld_con_send_error(con->client, C("Can't connect to remote or can't get user"));
+        con->is_admin_waiting_resp = 0;
+        send_admin_resp(con->srv, con);
+        g_message("%s call send_admin_resp over", G_STRLOC);
+        return;
+    }
+
+    char *buffer = NULL;
+    if (chassis_config_query_object(conf, "users", &buffer, 0) == FALSE || buffer == NULL) {
+        if (buffer) {
+            g_free(buffer);
+        }
+        network_mysqld_con_send_error(con->client, C("read user failed"));
+        return;
+    }
+ 
+    cetus_users_t *users = con->srv->priv->users;
+    gboolean success = cetus_users_parse_json(users, buffer);
+    if (success) {
+        g_message("read %d users", g_hash_table_size(users->records));
+    }
+    g_free(buffer);
+
+    network_mysqld_con_send_ok(con->client);
+
+    con->is_admin_waiting_resp = 0;
+    send_admin_resp(con->srv, con);
+    g_message("%s call send_admin_resp over", G_STRLOC);
+}
+
+
+static void admin_reload_user(network_mysqld_con* con, chassis_config_t *conf)
+{
+    chassis* chas = con->srv;
+
+    conf->options_update_flag = 1;
+    chas->asynchronous_type = ASYNCHRONOUS_RELOAD_USER;
+
+    evtimer_set(&chas->remote_config_event, admin_update_user, con);
+    struct timeval check_interval = {0, 5000};
+    chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+
     con->is_admin_waiting_resp = 1;
 }
 
@@ -1566,7 +1622,11 @@ void admin_config_reload(network_mysqld_con* con, char* object)
         if (ok) {
             network_mysqld_con_send_ok(con->client);
         } else {
-            network_mysqld_con_send_error(con->client, C("read user failed"));
+            if (conf->type == CHASSIS_CONF_MYSQL) {
+                return admin_reload_user(con, conf);
+            } else {
+                network_mysqld_con_send_error(con->client, C("read user failed"));
+            }
         }
     } else if (strcasecmp(object, "variables") == 0) {
         char* var_json = NULL;

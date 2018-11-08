@@ -107,7 +107,7 @@ cetus_users_set_records(cetus_users_t *users, GHashTable *new_records)
     users->records = new_records;
 }
 
-static gboolean
+gboolean
 cetus_users_parse_json(cetus_users_t *users, char *buffer)
 {
     cJSON *root = cJSON_Parse(buffer);
