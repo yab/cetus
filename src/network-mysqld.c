@@ -2629,6 +2629,9 @@ process_shard_write(network_mysqld_con *con, int *disp_flag)
         ss->state = NET_RW_STATE_NONE;
         ss->server->resp_len = 0;
 
+        if (!g_queue_is_empty(ss->server->recv_queue->chunks)) {
+            g_critical("%s:recv queue still has contents for server, con:%p", G_STRLOC, con);
+        }
         if (!g_queue_is_empty(ss->server->send_queue->chunks)) {
             process_write_to_server(con, ss, &write_wait);
         }
