@@ -98,7 +98,7 @@ gboolean chassis_config_register_service(chassis_config_t *conf, char *id, char 
 
 void chassis_config_unregister_service(chassis_config_t *conf, char *id);
 
-gboolean chassis_config_reload_variables(chassis_config_t *conf, const char *name, char **json_res);
+gboolean chassis_config_reload_variables(chassis_config_t *conf, const char *name);
 
 gboolean sql_filter_vars_reload_str_rules(const char *json_str);
 

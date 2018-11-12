@@ -570,7 +570,7 @@ gpointer retrieve_remote_config_mainloop(gpointer user_data) {
                     chassis_config_load_options_mysql(conf);
                     break;
                 case ASYNCHRONOUS_RELOAD_VARIABLES:
-                    //chassis_config_reload_variables();
+                    chassis_config_reload_variables(conf, "variables");
                     break;
                 case ASYNCHRONOUS_RELOAD_USER:
                     retrieve_user_from_remote(conf);

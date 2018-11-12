@@ -805,12 +805,9 @@ chassis_config_unregister_service(chassis_config_t *conf, char *id)
 }
 
 gboolean
-chassis_config_reload_variables(chassis_config_t *conf, const char *name, char **json_res)
+chassis_config_reload_variables(chassis_config_t *conf, const char *name)
 {
-    if (conf->type != CHASSIS_CONF_MYSQL) {
-        return FALSE;
-    }
-
+    g_debug("call chassis_config_reload_variables");
     gboolean status = FALSE;
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
 
@@ -825,27 +822,36 @@ chassis_config_reload_variables(chassis_config_t *conf, const char *name, char *
         goto mysql_error;
     }
     MYSQL_RES *result = mysql_store_result(conn);
-    if (!result)
+    if (!result) {
+        g_debug("%s:call mysql_store_result nil", G_STRLOC);
         goto mysql_error;
+    }
 
     MYSQL_ROW row;
     row = mysql_fetch_row(result);
     if (!row) {
+        g_debug("%s:call mysql_fetch_row nil", G_STRLOC);
         mysql_free_result(result);
         goto mysql_error;
     }
 
-    *json_res = g_strdup(row[0]);
     time_t mt = chassis_epoch_from_string(row[1], NULL);
 
     struct config_object_t *object = chassis_config_get_object(conf, name);
     if (!object) {
         mysql_free_result(result);
+        g_debug("call chassis_config_get_object nil");
         goto mysql_error;
     }
     chassis_config_object_set_cache(object, row[0], mt);
     mysql_free_result(result);
     status = TRUE;
+    conf->options_update_flag = 0;
+    conf->options_success_flag = 1;
+    g_debug("call chassis_config_reload_variables success");
 mysql_error:
+    conf->options_update_flag = 0;
+    conf->options_success_flag = 0;
+    g_debug("call chassis_config_reload_variables failure");
     return status;
 }

@@ -1488,7 +1488,7 @@ static void admin_update_settings(int fd, short what, void *arg)
     chassis_config_t* conf = con->srv->config_manager;
 
     if (conf->options_update_flag) {
-        struct timeval check_interval = {0, 5000};
+        struct timeval check_interval = {0, 1000};
         chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
         return;
     }
@@ -1543,7 +1543,7 @@ static void admin_reload_settings(network_mysqld_con* con)
     chas->asynchronous_type = ASYNCHRONOUS_RELOAD;
 
     evtimer_set(&chas->remote_config_event, admin_update_settings, con);
-    struct timeval check_interval = {0, 5000};
+    struct timeval check_interval = {0, 1000};
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
 
     con->is_admin_waiting_resp = 1;
@@ -1557,7 +1557,7 @@ static void admin_update_user(int fd, short what, void *arg)
     chassis_config_t* conf = con->srv->config_manager;
 
     if (conf->options_update_flag) {
-        struct timeval check_interval = {0, 5000};
+        struct timeval check_interval = {0, 1000};
         chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
         return;
     }
@@ -1602,7 +1602,63 @@ static void admin_reload_user(network_mysqld_con* con, chassis_config_t *conf)
     chas->asynchronous_type = ASYNCHRONOUS_RELOAD_USER;
 
     evtimer_set(&chas->remote_config_event, admin_update_user, con);
-    struct timeval check_interval = {0, 5000};
+    struct timeval check_interval = {0, 1000};
+    chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+
+    con->is_admin_waiting_resp = 1;
+}
+
+static void admin_update_variables(int fd, short what, void *arg)
+{
+    g_message("%s call admin_update_variables", G_STRLOC);
+    network_mysqld_con* con = arg;
+    chassis *chas = con->srv;
+    chassis_config_t* conf = con->srv->config_manager;
+
+    if (conf->options_update_flag) {
+        struct timeval check_interval = {0, 1000};
+        chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        return;
+    }
+
+    if (!conf->options_success_flag) {
+        network_mysqld_con_send_error(con->client, C("Can't connect to remote or can't get user"));
+        con->is_admin_waiting_resp = 0;
+        send_admin_resp(con->srv, con);
+        g_message("%s call send_admin_resp over", G_STRLOC);
+        return;
+    }
+
+    char *buffer = NULL;
+    if (chassis_config_query_object(conf, "variables", &buffer, 0) == FALSE || buffer == NULL) {
+        if (buffer) {
+            g_free(buffer);
+        }
+        network_mysqld_con_send_error(con->client, C("read variables failed"));
+        return;
+    }
+ 
+    if (sql_filter_vars_reload_str_rules(buffer) == FALSE) {
+        g_warning("variable rule reload error");
+    }
+    g_free(buffer);
+    network_mysqld_con_send_ok(con->client);
+
+    con->is_admin_waiting_resp = 0;
+    send_admin_resp(con->srv, con);
+    g_message("%s call send_admin_resp over", G_STRLOC);
+}
+
+
+static void admin_reload_variables(network_mysqld_con* con, chassis_config_t *conf)
+{
+    chassis* chas = con->srv;
+
+    conf->options_update_flag = 1;
+    chas->asynchronous_type = ASYNCHRONOUS_RELOAD_VARIABLES;
+
+    evtimer_set(&chas->remote_config_event, admin_update_variables, con);
+    struct timeval check_interval = {0, 1000};
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
 
     con->is_admin_waiting_resp = 1;
@@ -1630,14 +1686,11 @@ void admin_config_reload(network_mysqld_con* con, char* object)
         }
     } else if (strcasecmp(object, "variables") == 0) {
         char* var_json = NULL;
-        if (chassis_config_reload_variables(con->srv->config_manager, object, &var_json)) {
-            if (sql_filter_vars_reload_str_rules(var_json) == FALSE) {
-                g_warning("variable rule reload error");
-            }
-            g_free(var_json);
-            network_mysqld_con_send_ok(con->client);
-        } else {
+        chassis_config_t* conf = con->srv->config_manager;
+        if (conf->type != CHASSIS_CONF_MYSQL) {
             network_mysqld_con_send_error(con->client, C("reload variables failed"));
+        } else {
+            return admin_reload_variables(con, conf);
         }
     } else {
         network_mysqld_con_send_error(con->client, C("wrong parameter"));
