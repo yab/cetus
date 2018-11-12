@@ -1139,6 +1139,50 @@ void admin_update_user_password(network_mysqld_con* con, char *from_table,
                                     SERVER_STATUS_AUTOCOMMIT, 0);
 }
 
+static void admin_delete_remote_user_password_callback(int fd, short what, void *arg)
+{
+    g_message("%s call admin_delete_remote_user_password_callback", G_STRLOC);
+    network_mysqld_con* con = arg;
+    chassis *chas = con->srv;
+    chassis_config_t* conf = con->srv->config_manager;
+
+    if (conf->options_update_flag) {
+        struct timeval check_interval = {0, 1000};
+        chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        return;
+    }
+
+    if (!conf->options_success_flag) {
+        network_mysqld_con_send_error(con->client, C("remove remote user password failed"));
+        con->is_admin_waiting_resp = 0;
+        send_admin_resp(con->srv, con);
+        g_message("%s call send_admin_resp over", G_STRLOC);
+        return;
+    }
+
+    network_mysqld_con_send_ok_full(con->client, 1, 0,
+                                    SERVER_STATUS_AUTOCOMMIT, 0);
+
+    con->is_admin_waiting_resp = 0;
+    send_admin_resp(con->srv, con);
+    g_message("%s call send_admin_resp over", G_STRLOC);
+}
+
+static void admin_delete_remote_user_password(network_mysqld_con* con, chassis_config_t *conf)
+{
+    g_message("%s call admin_update_remote_user_password", G_STRLOC);
+    chassis* chas = con->srv;
+
+    conf->options_update_flag = 1;
+    chas->asynchronous_type = ASYNCHRONOUS_DELETE_USER_PASSWORD;
+
+    evtimer_set(&chas->remote_config_event, admin_delete_remote_user_password_callback, con);
+    struct timeval check_interval = {0, 2000};
+    chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+
+    con->is_admin_waiting_resp = 1;
+}
+
 void admin_delete_user_password(network_mysqld_con* con, char* user)
 {
     if (con->is_admin_client) {
@@ -1147,8 +1191,15 @@ void admin_delete_user_password(network_mysqld_con* con, char* user)
 
     chassis_private *g = con->srv->priv;
     gboolean affected = cetus_users_delete_record(g->users, user);
-    if (affected)
-        cetus_users_write_json(g->users);
+    if (affected) {
+        g_message("%s affected is true", G_STRLOC);
+        chassis_config_t* conf = con->srv->config_manager;
+        if (cetus_users_write_json(g->users) == FALSE) {
+            if (conf->type == CHASSIS_CONF_MYSQL) {
+                return admin_delete_remote_user_password(con, conf);
+            }
+        }
+    }
     network_mysqld_con_send_ok_full(con->client, affected?1:0, 0,
                                     SERVER_STATUS_AUTOCOMMIT, 0);
 }
