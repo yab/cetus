@@ -221,11 +221,15 @@ cetus_users_write_json(cetus_users_t *users)
     cJSON_AddItemToObject(root, "users", users_node);
     char *json_str = cJSON_Print(root);
 
-    chassis_config_write_object(users->conf_manager, "users", json_str);
-    cJSON_Delete(root);
-    g_free(json_str);
-
-    return TRUE;
+    if (chassis_config_write_object(users->conf_manager, "users", json_str)) {
+        cJSON_Delete(root);
+        g_free(json_str);
+        return TRUE;
+    } else {
+        cJSON_Delete(root);
+        g_free(json_str);
+        return FALSE;
+    }
 }
 
 gboolean

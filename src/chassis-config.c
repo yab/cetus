@@ -526,7 +526,7 @@ chassis_config_query_object(chassis_config_t *conf, const char *name, char **jso
     }
 }
 
-static gboolean
+gboolean
 chassis_config_mysql_write_object(chassis_config_t *conf,
                                   struct config_object_t *object, const char *name, const char *json)
 {
@@ -548,6 +548,14 @@ chassis_config_mysql_write_object(chassis_config_t *conf,
     }
     chassis_config_object_set_cache(object, json, now);
     g_string_free(sql, TRUE);
+
+    conf->options_update_flag = 0;
+    if (status) {
+        conf->options_success_flag = 1;
+    } else {
+        conf->options_success_flag = 0;
+    }
+
     return status;
 }
 
@@ -592,7 +600,8 @@ chassis_config_write_object(chassis_config_t *conf, const char *name, const char
     }
     switch (conf->type) {
     case CHASSIS_CONF_MYSQL:
-        return chassis_config_mysql_write_object(conf, object, name, json);
+        conf->user_data = strdup(json);
+        return FALSE;
     case CHASSIS_CONF_LOCAL:
         return chassis_config_local_write_object(conf, object, name, json);
     default:

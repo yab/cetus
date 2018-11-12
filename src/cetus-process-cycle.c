@@ -560,6 +560,7 @@ static void retrieve_user_from_remote(chassis_config_t* conf)
 gpointer retrieve_remote_config_mainloop(gpointer user_data) {
     chassis *chas = user_data;
     chassis_config_t* conf = chas->config_manager;
+    struct config_object_t *object;
 
     while(!chassis_is_shutdown()) {
         if (!conf->options_update_flag) {
@@ -576,10 +577,16 @@ gpointer retrieve_remote_config_mainloop(gpointer user_data) {
                     retrieve_user_from_remote(conf);
                     break;
                 case ASYNCHRONOUS_DELETE_USER_PASSWORD:
-                    //chassis_config_mysql_write_object(conf, object, name, json);
+                    object = chassis_config_get_object(conf, "users");
+                    chassis_config_mysql_write_object(conf, object, "users", conf->user_data);
+                    g_free(conf->user_data);
+                    conf->user_data = NULL;
                     break;
                 case ASYNCHRONOUS_UPDATE_USER_PASSWORD:
-                    //chassis_config_mysql_write_object(conf, object, name, json);
+                    object = chassis_config_get_object(conf, "users");
+                    chassis_config_mysql_write_object(conf, object, "users", conf->user_data);
+                    g_free(conf->user_data);
+                    conf->user_data = NULL;
                     break;
                 case ASYNCHRONOUS_CREATE_SINGLE_TABLE:
                     //chassis_config_mysql_write_object(conf, object, name, json);

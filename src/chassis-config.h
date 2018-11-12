@@ -58,6 +58,7 @@ struct chassis_config_t {
 
     GList *objects_one;
     GList *objects_two;
+    void *user_data;
 };
 
 /**
@@ -101,5 +102,7 @@ void chassis_config_unregister_service(chassis_config_t *conf, char *id);
 gboolean chassis_config_reload_variables(chassis_config_t *conf, const char *name);
 
 gboolean sql_filter_vars_reload_str_rules(const char *json_str);
+
+gboolean chassis_config_mysql_write_object(chassis_config_t *conf, struct config_object_t *object, const char *name, const char *json);
 
 #endif /* CHASSIS_CONFIG_H */
