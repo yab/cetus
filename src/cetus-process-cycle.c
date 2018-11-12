@@ -542,9 +542,9 @@ cetus_master_process_exit(cetus_cycle_t *cycle)
 
 static void retrieve_user_from_remote(chassis_config_t* conf)
 {
-    struct config_object_t *object = chassis_config_get_object(conf, "user");
+    struct config_object_t *object = chassis_config_get_object(conf, "users");
     if  (object) {
-        if (chassis_config_mysql_query_object(conf, object, "user")) {
+        if (chassis_config_mysql_query_object(conf, object, "users")) {
             conf->options_update_flag = 0;
             conf->options_success_flag = 1;
         } else {
