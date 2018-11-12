@@ -325,16 +325,26 @@ chassis_config_set_remote_options(chassis_config_t *conf, gchar* key, gchar* val
         MYSQL *conn = chassis_config_get_mysql_connection(conf);
         if (!conn) {
             g_warning("Cannot connect to mysql server.");
+            conf->options_update_flag = 0;
+            conf->options_success_flag = 0;
             return FALSE;
         }
         gchar sql[1024] = { 0 }, real_value[1024] = { 0 };
         mysql_real_escape_string(conn, real_value, value, strlen(value));
         snprintf(sql, sizeof(sql),
-        "REPLACE INTO %s.`settings`(option_key,option_value) VALUES ('%s', '%s')", conf->schema, key, real_value);
+                "REPLACE INTO %s.`settings`(option_key,option_value) VALUES ('%s', '%s')", conf->schema, key, real_value);
         if (mysql_query(conn, sql)) {
+            conf->options_update_flag = 0;
+            conf->options_success_flag = 0;
             g_warning("sql failed: %s | error: %s", sql, mysql_error(conn));
             return FALSE;
+        } else {
+            conf->options_update_flag = 0;
+            conf->options_success_flag = 1;
         }
+    } else {
+        conf->options_update_flag = 0;
+        conf->options_success_flag = 0;
     }
     return TRUE;
 }

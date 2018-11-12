@@ -59,6 +59,8 @@ struct chassis_config_t {
     GList *objects_one;
     GList *objects_two;
     void *user_data;
+    void *key;
+    void *value;
 };
 
 /**

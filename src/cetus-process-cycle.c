@@ -576,29 +576,20 @@ gpointer retrieve_remote_config_mainloop(gpointer user_data) {
                 case ASYNCHRONOUS_RELOAD_USER:
                     retrieve_user_from_remote(conf);
                     break;
-                case ASYNCHRONOUS_DELETE_USER_PASSWORD:
+                case ASYNCHRONOUS_UPDATE_OR_DELETE_USER_PASSWORD:
                     object = chassis_config_get_object(conf, "users");
                     chassis_config_mysql_write_object(conf, object, "users", conf->user_data);
                     g_free(conf->user_data);
                     conf->user_data = NULL;
                     break;
-                case ASYNCHRONOUS_UPDATE_USER_PASSWORD:
-                    object = chassis_config_get_object(conf, "users");
-                    chassis_config_mysql_write_object(conf, object, "users", conf->user_data);
+                case ASYNCHRONOUS_CONFIG_REMOTE_SHARD:
+                    object = chassis_config_get_object(conf, "sharding");
+                    chassis_config_mysql_write_object(conf, object, "sharding", conf->user_data);
                     g_free(conf->user_data);
                     conf->user_data = NULL;
-                    break;
-                case ASYNCHRONOUS_CREATE_SINGLE_TABLE:
-                    //chassis_config_mysql_write_object(conf, object, name, json);
-                    break;
-                case ASYNCHRONOUS_CREATE_SHARD_TABLE:
-                    //chassis_config_mysql_write_object(conf, object, name, json);
-                    break;
-                case ASYNCHRONOUS_CREATE_VDB:
-                    //chassis_config_mysql_write_object(conf, object, name, json);
                     break;
                 case ASYNCHRONOUS_SET_CONFIG:
-                    //chassis_config_set_remote_options();
+                    chassis_config_set_remote_options(conf, conf->key, conf->value);
                     break;
                 default:
                     break;

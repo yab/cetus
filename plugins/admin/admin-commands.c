@@ -1069,9 +1069,9 @@ void admin_select_user_password(network_mysqld_con* con, char* from_table, char 
     }
 }
 
-static void admin_update_remote_user_password_callback(int fd, short what, void *arg)
+static void admin_update_or_delete_remote_user_password_callback(int fd, short what, void *arg)
 {
-    g_message("%s call admin_update_remote_user_password_callback", G_STRLOC);
+    g_message("%s call admin_update_or_delete_remote_user_password_callback", G_STRLOC);
     network_mysqld_con* con = arg;
     chassis *chas = con->srv;
     chassis_config_t* conf = con->srv->config_manager;
@@ -1098,15 +1098,15 @@ static void admin_update_remote_user_password_callback(int fd, short what, void 
     g_message("%s call send_admin_resp over", G_STRLOC);
 }
 
-static void admin_update_remote_user_password(network_mysqld_con* con, chassis_config_t *conf)
+static void admin_update_or_delete_remote_user_password(network_mysqld_con* con, chassis_config_t *conf)
 {
-    g_message("%s call admin_update_remote_user_password", G_STRLOC);
+    g_message("%s call admin_update_or_delete_remote_user_password", G_STRLOC);
     chassis* chas = con->srv;
 
     conf->options_update_flag = 1;
-    chas->asynchronous_type = ASYNCHRONOUS_UPDATE_USER_PASSWORD;
+    chas->asynchronous_type = ASYNCHRONOUS_UPDATE_OR_DELETE_USER_PASSWORD;
 
-    evtimer_set(&chas->remote_config_event, admin_update_remote_user_password_callback, con);
+    evtimer_set(&chas->remote_config_event, admin_update_or_delete_remote_user_password_callback, con);
     struct timeval check_interval = {0, 2000};
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
 
@@ -1131,56 +1131,12 @@ void admin_update_user_password(network_mysqld_con* con, char *from_table,
         chassis_config_t* conf = con->srv->config_manager;
         if (cetus_users_write_json(g->users) == FALSE) {
             if (conf->type == CHASSIS_CONF_MYSQL) {
-                return admin_update_remote_user_password(con, conf);
+                return admin_update_or_delete_remote_user_password(con, conf);
             }
         }
     }
     network_mysqld_con_send_ok_full(con->client, affected?1:0, 0,
                                     SERVER_STATUS_AUTOCOMMIT, 0);
-}
-
-static void admin_delete_remote_user_password_callback(int fd, short what, void *arg)
-{
-    g_message("%s call admin_delete_remote_user_password_callback", G_STRLOC);
-    network_mysqld_con* con = arg;
-    chassis *chas = con->srv;
-    chassis_config_t* conf = con->srv->config_manager;
-
-    if (conf->options_update_flag) {
-        struct timeval check_interval = {0, 1000};
-        chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
-        return;
-    }
-
-    if (!conf->options_success_flag) {
-        network_mysqld_con_send_error(con->client, C("remove remote user password failed"));
-        con->is_admin_waiting_resp = 0;
-        send_admin_resp(con->srv, con);
-        g_message("%s call send_admin_resp over", G_STRLOC);
-        return;
-    }
-
-    network_mysqld_con_send_ok_full(con->client, 1, 0,
-                                    SERVER_STATUS_AUTOCOMMIT, 0);
-
-    con->is_admin_waiting_resp = 0;
-    send_admin_resp(con->srv, con);
-    g_message("%s call send_admin_resp over", G_STRLOC);
-}
-
-static void admin_delete_remote_user_password(network_mysqld_con* con, chassis_config_t *conf)
-{
-    g_message("%s call admin_update_remote_user_password", G_STRLOC);
-    chassis* chas = con->srv;
-
-    conf->options_update_flag = 1;
-    chas->asynchronous_type = ASYNCHRONOUS_DELETE_USER_PASSWORD;
-
-    evtimer_set(&chas->remote_config_event, admin_delete_remote_user_password_callback, con);
-    struct timeval check_interval = {0, 2000};
-    chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
-
-    con->is_admin_waiting_resp = 1;
 }
 
 void admin_delete_user_password(network_mysqld_con* con, char* user)
@@ -1196,7 +1152,7 @@ void admin_delete_user_password(network_mysqld_con* con, char* user)
         chassis_config_t* conf = con->srv->config_manager;
         if (cetus_users_write_json(g->users) == FALSE) {
             if (conf->type == CHASSIS_CONF_MYSQL) {
-                return admin_delete_remote_user_password(con, conf);
+                return admin_update_or_delete_remote_user_password(con, conf);
             }
         }
     }
@@ -1540,6 +1496,49 @@ void admin_get_config(network_mysqld_con* con, char* p)
     g_ptr_array_free(rows, TRUE);
 }
 
+static void admin_set_remote_config_callback(int fd, short what, void *arg)
+{
+    g_message("%s call admin_update_or_delete_remote_user_password_callback", G_STRLOC);
+    network_mysqld_con* con = arg;
+    chassis *chas = con->srv;
+    chassis_config_t* conf = con->srv->config_manager;
+
+    if (conf->options_update_flag) {
+        struct timeval check_interval = {0, 1000};
+        chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        return;
+    }
+
+    if (!conf->options_success_flag) {
+        network_mysqld_con_send_error(con->client,C("Variable is set locally but cannot replace remote settings"));
+        con->is_admin_waiting_resp = 0;
+        send_admin_resp(con->srv, con);
+        g_message("%s call send_admin_resp over", G_STRLOC);
+        return;
+    }
+
+    network_mysqld_con_send_ok_full(con->client, 1, 0, SERVER_STATUS_AUTOCOMMIT, 0);
+
+    con->is_admin_waiting_resp = 0;
+    send_admin_resp(con->srv, con);
+    g_message("%s call send_admin_resp over", G_STRLOC);
+}
+
+static void admin_set_remote_config(network_mysqld_con* con, chassis_config_t *conf)
+{
+    g_message("%s call admin_set_remote_config", G_STRLOC);
+    chassis* chas = con->srv;
+
+    conf->options_update_flag = 1;
+    chas->asynchronous_type = ASYNCHRONOUS_SET_CONFIG;
+
+    evtimer_set(&chas->remote_config_event, admin_set_remote_config_callback, con);
+    struct timeval check_interval = {0, 2000};
+    chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+
+    con->is_admin_waiting_resp = 1;
+}
+
 void admin_set_config(network_mysqld_con* con, char* key, char* value)
 {
     if (con->is_admin_client) {
@@ -1562,19 +1561,20 @@ void admin_set_config(network_mysqld_con* con, char* key, char* value)
 
     g_list_free(options);
 
-    if(0 == ret && !chassis_config_set_remote_options(con->srv->config_manager, key, value)) {
-        network_mysqld_con_send_error(con->client,C("Variable is set locally but cannot replace remote settings"));
+
+    chassis_config_t* conf = con->srv->config_manager;
+
+    if(ret == 0 && conf->type == CHASSIS_CONF_MYSQL) {
+        conf->key = key;
+        conf->value = value;
+        admin_set_remote_config(con, conf);
         return;
     }
 
     if(0 == ret) {
-        if(con->srv->config_manager->type == CHASSIS_CONF_MYSQL) {
-            network_mysqld_con_send_ok_full(con->client, 1, 0, SERVER_STATUS_AUTOCOMMIT, 0);
-        } else {
-            gint effected_rows = 0;
-            gint save_ret = save_setting(con->srv, &effected_rows);
-            send_result(con->client, save_ret, 1);
-        }
+        gint effected_rows = 0;
+        gint save_ret = save_setting(con->srv, &effected_rows);
+        send_result(con->client, save_ret, 1);
     } else if(ASSIGN_NOT_SUPPORT == ret){
         network_mysqld_con_send_error_full(con->client, C("Variable cannot be set dynamically"), 1065, "28000");
     } else if(ASSIGN_VALUE_INVALID == ret){
@@ -2073,6 +2073,49 @@ static gboolean convert_datetime_partitions(GPtrArray *partitions, sharding_vdb_
     return TRUE;
 }
 
+static void admin_config_remote_sharding_callback(int fd, short what, void *arg)
+{
+    g_message("%s call admin_config_remote_sharding_callback", G_STRLOC);
+    network_mysqld_con* con = arg;
+    chassis *chas = con->srv;
+    chassis_config_t* conf = con->srv->config_manager;
+
+    if (conf->options_update_flag) {
+        struct timeval check_interval = {0, 1000};
+        chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        return;
+    }
+
+    if (!conf->options_success_flag) {
+        network_mysqld_con_send_error(con->client, C("config remote sharding failed"));
+        con->is_admin_waiting_resp = 0;
+        send_admin_resp(con->srv, con);
+        g_message("%s call send_admin_resp over", G_STRLOC);
+        return;
+    }
+
+    network_mysqld_con_send_ok(con->client);
+
+    con->is_admin_waiting_resp = 0;
+    send_admin_resp(con->srv, con);
+    g_message("%s call send_admin_resp over", G_STRLOC);
+}
+
+static void admin_config_remote_sharding(network_mysqld_con* con, chassis_config_t *conf)
+{
+    g_message("%s call admin_config_remote_sharding", G_STRLOC);
+    chassis* chas = con->srv;
+
+    conf->options_update_flag = 1;
+    chas->asynchronous_type = ASYNCHRONOUS_CONFIG_REMOTE_SHARD;
+
+    evtimer_set(&chas->remote_config_event, admin_config_remote_sharding_callback, con);
+    struct timeval check_interval = {0, 2000};
+    chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+
+    con->is_admin_waiting_resp = 1;
+}
+
 void admin_create_vdb(network_mysqld_con* con, int id, GPtrArray* partitions,
                       enum sharding_method_t method, int key_type, int shard_num)
 {
@@ -2114,7 +2157,12 @@ void admin_create_vdb(network_mysqld_con* con, int id, GPtrArray* partitions,
         && shard_conf_add_vdb(vdb);
     if (ok) {
         g_message("Admin: %s", con->orig_sql->str);
-        shard_conf_write_json(con->srv->config_manager);
+        chassis_config_t* conf = con->srv->config_manager;
+        if (shard_conf_write_json(conf) == FALSE) {
+            if (conf->type == CHASSIS_CONF_MYSQL) {
+                return admin_config_remote_sharding(con, conf);
+            }
+        }
         network_mysqld_con_send_ok(con->client);
     } else {
         sharding_vdb_free(vdb);
@@ -2137,7 +2185,12 @@ void admin_create_sharded_table(network_mysqld_con* con, const char* schema,
     gboolean ok = shard_conf_add_sharded_table(t);
     if (ok) {
         g_message("Admin: %s", con->orig_sql->str);
-        shard_conf_write_json(con->srv->config_manager);
+        chassis_config_t* conf = con->srv->config_manager;
+        if (shard_conf_write_json(conf) == FALSE) {
+            if (conf->type == CHASSIS_CONF_MYSQL) {
+                return admin_config_remote_sharding(con, conf);
+            }
+        }
         network_mysqld_con_send_ok(con->client);
     } else {
         network_mysqld_con_send_error(con->client, C("failed to add sharded table"));
@@ -2340,7 +2393,12 @@ void admin_create_single_table(network_mysqld_con* con, const char* schema,
     gboolean ok = shard_conf_add_single_table(schema, table, group);
     if (ok) {
         g_message("Admin: %s", con->orig_sql->str);
-        shard_conf_write_json(con->srv->config_manager);
+        chassis_config_t* conf = con->srv->config_manager;
+        if (shard_conf_write_json(conf) == FALSE) {
+            if (conf->type == CHASSIS_CONF_MYSQL) {
+                return admin_config_remote_sharding(con, conf);
+            }
+        }
         network_mysqld_con_send_ok_full(con->client, 1, 0, SERVER_STATUS_AUTOCOMMIT, 0);
     } else {
         network_mysqld_con_send_error(con->client, C("failed to add single table"));
