@@ -1494,7 +1494,7 @@ static void admin_update_settings(int fd, short what, void *arg)
     }
 
     if (!conf->options_success_flag) {
-        network_mysqld_con_send_error(con->client, C("Can't connect to remote or can't get config"));
+        network_mysqld_con_send_error(con->client, C("load config failed"));
         con->is_admin_waiting_resp = 0;
         send_admin_resp(con->srv, con);
         g_message("%s call send_admin_resp over", G_STRLOC);
@@ -1563,7 +1563,7 @@ static void admin_update_user(int fd, short what, void *arg)
     }
 
     if (!conf->options_success_flag) {
-        network_mysqld_con_send_error(con->client, C("Can't connect to remote or can't get user"));
+        network_mysqld_con_send_error(con->client, C("load user failed"));
         con->is_admin_waiting_resp = 0;
         send_admin_resp(con->srv, con);
         g_message("%s call send_admin_resp over", G_STRLOC);
@@ -1622,7 +1622,7 @@ static void admin_update_variables(int fd, short what, void *arg)
     }
 
     if (!conf->options_success_flag) {
-        network_mysqld_con_send_error(con->client, C("Can't connect to remote or can't get user"));
+        network_mysqld_con_send_error(con->client, C("load variables failed"));
         con->is_admin_waiting_resp = 0;
         send_admin_resp(con->srv, con);
         g_message("%s call send_admin_resp over", G_STRLOC);
