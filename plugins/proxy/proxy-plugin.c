@@ -264,12 +264,7 @@ proxy_c_read_query_result(network_mysqld_con *con)
         }
         break;
     case INJ_ID_CHANGE_DB:
-        if (res->qstat.query_status == MYSQLD_PACKET_ERR) {
-            /* could not change db */
-            ret = PROXY_NO_DECISION;
-        } else {
-            ret = PROXY_IGNORE_RESULT;
-        }
+        ret = PROXY_IGNORE_RESULT;
         break;
     default:
         ret = PROXY_IGNORE_RESULT;
@@ -335,6 +330,7 @@ proxy_c_read_query_result(network_mysqld_con *con)
 
     switch (ret) {
     case PROXY_NO_DECISION:
+        g_debug("%s: PROXY_NO_DECISION here", G_STRLOC);
         if (!st->injected.sent_resultset) {
                 /**
                  * make sure we send only one result-set per client-query
@@ -651,7 +647,7 @@ process_non_trans_query(network_mysqld_con *con, sql_context_t *context, mysqld_
     }                           /* end switch */
 
     if (con->srv->master_preferred || context->rw_flag & CF_WRITE || need_to_visit_master) {
-            g_debug("%s:rw here", G_STRLOC);
+        g_debug("%s:rw here", G_STRLOC);
         /* rw operation */
         con->srv->query_stats.client_query.rw++;
         if (is_orig_ro_server) {
@@ -663,7 +659,7 @@ process_non_trans_query(network_mysqld_con *con, sql_context_t *context, mysqld_
             }
         }
     } else {                    /* ro operation */
-            g_debug("%s:ro here", G_STRLOC);
+        g_debug("%s:ro here", G_STRLOC);
         con->srv->query_stats.client_query.ro++;
         con->is_read_ro_server_allowed = 1;
         if (con->srv->query_cache_enabled) {
@@ -918,10 +914,11 @@ adjust_default_db(network_mysqld_con *con, enum enum_server_command cmd)
     if (clt_default_db->len > 0) {
         if (!g_string_equal(clt_default_db, srv_default_db)) {
             GString *packet = g_string_new(NULL);
-            g_string_append_c(packet, (char)COM_INIT_DB);
+            g_string_append_c(packet, (char)COM_QUERY);
+            g_string_append(packet, "use ");
             g_string_append_len(packet, clt_default_db->str, clt_default_db->len);
             proxy_inject_packet(con, PROXY_QUEUE_ADD_PREPEND, INJ_ID_CHANGE_DB, packet, TRUE);
-            g_debug("%s: adjust default db, COM_INIT_DB:%d", G_STRLOC, COM_INIT_DB);
+            g_debug("%s: adjust default db", G_STRLOC);
         }
     }
     return 0;
@@ -1202,6 +1199,11 @@ process_query_or_stmt_prepare(network_mysqld_con *con, proxy_plugin_con_t *st,
     /* query statistics */
     query_stats_t *stats = &(con->srv->query_stats);
     switch (context->stmt_type) {
+    case STMT_SHOW_WARNINGS:
+        if (con->last_warning_met) {
+            g_debug("%s: show warnings is met", G_STRLOC);
+            return 1;
+        }
     case STMT_SELECT:
         stats->com_select += 1;
         break;
@@ -1419,6 +1421,16 @@ network_read_query(network_mysqld_con *con, proxy_plugin_con_t *st)
         proxy_inject_packet(con, PROXY_QUEUE_ADD_APPEND, INJ_ID_COM_DEFAULT, payload, TRUE);
     }
 
+    if (context->stmt_type == STMT_SHOW_WARNINGS && con->last_warning_met) {
+        if (con->server == NULL) {
+            network_injection_queue_reset(st->injected.queries);
+            network_mysqld_con_send_ok_full(con->client, 0, 0, 0, 0);
+            return PROXY_SEND_RESULT;
+        } else {
+            return PROXY_SEND_INJECTION;
+        }
+    }
+
     if (con->multiple_server_mode) {
         query_attr.conn_reserved = 1;
         if (command == COM_STMT_EXECUTE || command == COM_STMT_CLOSE) {
@@ -1529,6 +1541,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(proxy_read_query)
         }
 
         ret = network_read_query(con, st);
+        con->last_warning_met = 0;
 
         if (con->server != NULL) {
             con->last_backend_type = st->backend->type;
