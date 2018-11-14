@@ -263,9 +263,16 @@ proxy_c_read_query_result(network_mysqld_con *con)
             ret = PROXY_IGNORE_RESULT;
         }
         break;
-    case INJ_ID_CHANGE_DB:
+    case INJ_ID_CHANGE_DB: {
+        network_mysqld_com_query_result_t *query = con->parse.data;
+        if (query->query_status == MYSQLD_PACKET_OK) {
+            g_string_truncate(con->server->default_db, 0);
+            g_string_append_len(con->server->default_db, S(con->client->default_db));
+            g_debug("%s: set server db to client db for con:%p", G_STRLOC, con);
+        }
         ret = PROXY_IGNORE_RESULT;
         break;
+    }
     default:
         ret = PROXY_IGNORE_RESULT;
         break;
