@@ -1496,10 +1496,10 @@ void admin_get_config(network_mysqld_con* con, char* p)
         snprintf(buf2, 32, "%d", chas->max_idle_connections);
         snprintf(buf3, 32, "%lld", chas->max_resp_len);
         snprintf(buf4, 32, "%d", chas->master_preferred);
-        APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.default_pool_size", buf1);
-        APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.max_pool_size", buf2);
-        APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.max_resp_len", buf3);
-        APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.master_preferred", buf4);
+        APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.default-pool-size", buf1);
+        APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.max-pool-size", buf2);
+        APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.max-resp-len", buf3);
+        APPEND_ROW_3_COL(rows, g_strdup(buffer), "pool.master-preferred", buf4);
     } else {
         APPEND_ROW_3_COL(rows, g_strdup(buffer), (char*)p, (char*)p);
     }
