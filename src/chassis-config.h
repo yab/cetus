@@ -34,10 +34,12 @@ enum chassis_config_type_t {
 
 struct chassis_config_t {
     unsigned int port:16;
+    unsigned int retries:4;
     unsigned int options_success_flag:1;
     unsigned int options_update_flag:1;
     unsigned int options_index:1;
     unsigned int objects_index:1;
+    int   ms_timeout;
     enum  chassis_config_type_t type;
     char *user;
     char *password;

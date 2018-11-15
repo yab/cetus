@@ -1071,14 +1071,25 @@ void admin_select_user_password(network_mysqld_con* con, char* from_table, char 
 
 static void admin_update_or_delete_remote_user_password_callback(int fd, short what, void *arg)
 {
-    g_message("%s call admin_update_or_delete_remote_user_password_callback", G_STRLOC);
     network_mysqld_con* con = arg;
     chassis *chas = con->srv;
     chassis_config_t* conf = con->srv->config_manager;
 
     if (conf->options_update_flag) {
-        struct timeval check_interval = {0, 1000};
+        conf->retries++;
+        if (conf->retries == 0) {
+            network_mysqld_con_send_error(con->client, C("update remote user password timeout"));
+            con->is_admin_waiting_resp = 0;
+            send_admin_resp(con->srv, con);
+            g_message("%s call send_admin_resp over, wait:%d", G_STRLOC, conf->ms_timeout);
+            return;
+        }
+        conf->ms_timeout = conf->ms_timeout << 1;
+        int sec = conf->ms_timeout / 1000;
+        int usec = (conf->ms_timeout - 1000 * sec) * 1000;
+        struct timeval check_interval = {sec, usec};
         chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        g_message("%s call admin_update_or_delete_remote_user_password_callback, timeout:%d", G_STRLOC, conf->ms_timeout);
         return;
     }
 
@@ -1108,6 +1119,8 @@ static void admin_update_or_delete_remote_user_password(network_mysqld_con* con,
 
     evtimer_set(&chas->remote_config_event, admin_update_or_delete_remote_user_password_callback, con);
     struct timeval check_interval = {0, 2000};
+    conf->ms_timeout = 2;
+    conf->retries = 1;
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
 
     con->is_admin_waiting_resp = 1;
@@ -1504,8 +1517,20 @@ static void admin_set_remote_config_callback(int fd, short what, void *arg)
     chassis_config_t* conf = con->srv->config_manager;
 
     if (conf->options_update_flag) {
-        struct timeval check_interval = {0, 1000};
+        conf->retries++;
+        if (conf->retries == 0) {
+            network_mysqld_con_send_error(con->client, C("update remote config timeout"));
+            con->is_admin_waiting_resp = 0;
+            send_admin_resp(con->srv, con);
+            g_message("%s call admin_set_remote_config_callback timeout, last timeout:%d", G_STRLOC, conf->ms_timeout);
+            return;
+        }
+        conf->ms_timeout = conf->ms_timeout << 1;
+        int sec = conf->ms_timeout / 1000;
+        int usec = (conf->ms_timeout - 1000 * sec) * 1000;
+        struct timeval check_interval = {sec, usec};
         chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        g_message("%s call admin_set_remote_config_callback, timeout:%d", G_STRLOC, conf->ms_timeout);
         return;
     }
 
@@ -1534,6 +1559,8 @@ static void admin_set_remote_config(network_mysqld_con* con, chassis_config_t *c
 
     evtimer_set(&chas->remote_config_event, admin_set_remote_config_callback, con);
     struct timeval check_interval = {0, 2000};
+    conf->ms_timeout = 2;
+    conf->retries = 1;
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
 
     con->is_admin_waiting_resp = 1;
@@ -1592,8 +1619,20 @@ static void admin_update_settings(int fd, short what, void *arg)
     chassis_config_t* conf = con->srv->config_manager;
 
     if (conf->options_update_flag) {
-        struct timeval check_interval = {0, 1000};
+        conf->retries++;
+        if (conf->retries == 0) {
+            network_mysqld_con_send_error(con->client, C("update remote settings timeout"));
+            con->is_admin_waiting_resp = 0;
+            send_admin_resp(con->srv, con);
+            g_message("%s call admin_update_settings timeout, last timeout:%d", G_STRLOC, conf->ms_timeout);
+            return;
+        }
+        conf->ms_timeout = conf->ms_timeout << 1;
+        int sec = conf->ms_timeout / 1000;
+        int usec = (conf->ms_timeout - 1000 * sec) * 1000;
+        struct timeval check_interval = {sec, usec};
         chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        g_message("%s call admin_update_settings, timeout:%d", G_STRLOC, conf->ms_timeout);
         return;
     }
 
@@ -1648,6 +1687,8 @@ static void admin_reload_settings(network_mysqld_con* con)
 
     evtimer_set(&chas->remote_config_event, admin_update_settings, con);
     struct timeval check_interval = {0, 2000};
+    conf->ms_timeout = 2;
+    conf->retries = 1;
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
 
     con->is_admin_waiting_resp = 1;
@@ -1655,19 +1696,30 @@ static void admin_reload_settings(network_mysqld_con* con)
 
 static void admin_update_user(int fd, short what, void *arg)
 {
-    g_message("%s call admin_update_user", G_STRLOC);
     network_mysqld_con* con = arg;
     chassis *chas = con->srv;
     chassis_config_t* conf = con->srv->config_manager;
 
     if (conf->options_update_flag) {
-        struct timeval check_interval = {0, 1000};
+        conf->retries++;
+        if (conf->retries == 0) {
+            network_mysqld_con_send_error(con->client, C("update user timeout"));
+            con->is_admin_waiting_resp = 0;
+            send_admin_resp(con->srv, con);
+            g_message("%s call send_admin_resp timeout, last timeout:%d", G_STRLOC, conf->ms_timeout);
+            return;
+        }
+        conf->ms_timeout = conf->ms_timeout << 1;
+        int sec = conf->ms_timeout / 1000;
+        int usec = (conf->ms_timeout - 1000 * sec) * 1000;
+        struct timeval check_interval = {sec, usec};
         chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        g_message("%s call admin_update_user, timeout:%d", G_STRLOC, conf->ms_timeout);
         return;
     }
 
     if (!conf->options_success_flag) {
-        network_mysqld_con_send_error(con->client, C("load user failed"));
+        network_mysqld_con_send_error(con->client, C("update user failed"));
         con->is_admin_waiting_resp = 0;
         send_admin_resp(con->srv, con);
         g_message("%s call send_admin_resp over", G_STRLOC);
@@ -1707,6 +1759,8 @@ static void admin_reload_user(network_mysqld_con* con, chassis_config_t *conf)
 
     evtimer_set(&chas->remote_config_event, admin_update_user, con);
     struct timeval check_interval = {0, 2000};
+    conf->ms_timeout = 2;
+    conf->retries = 1;
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
 
     con->is_admin_waiting_resp = 1;
@@ -1720,8 +1774,20 @@ static void admin_update_variables(int fd, short what, void *arg)
     chassis_config_t* conf = con->srv->config_manager;
 
     if (conf->options_update_flag) {
-        struct timeval check_interval = {0, 1000};
+        conf->retries++;
+        if (conf->retries == 0) {
+            network_mysqld_con_send_error(con->client, C("update variables timeout"));
+            con->is_admin_waiting_resp = 0;
+            send_admin_resp(con->srv, con);
+            g_message("%s call admin_update_variables timeout, last timeout:%d", G_STRLOC, conf->ms_timeout);
+            return;
+        }
+        conf->ms_timeout = conf->ms_timeout << 1;
+        int sec = conf->ms_timeout / 1000;
+        int usec = (conf->ms_timeout - 1000 * sec) * 1000;
+        struct timeval check_interval = {sec, usec};
         chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        g_message("%s call admin_update_variables, timeout:%d", G_STRLOC, conf->ms_timeout);
         return;
     }
 
@@ -1763,6 +1829,8 @@ static void admin_reload_variables(network_mysqld_con* con, chassis_config_t *co
 
     evtimer_set(&chas->remote_config_event, admin_update_variables, con);
     struct timeval check_interval = {0, 2000};
+    conf->ms_timeout = 2;
+    conf->retries = 1;
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
 
     con->is_admin_waiting_resp = 1;
@@ -2081,8 +2149,20 @@ static void admin_config_remote_sharding_callback(int fd, short what, void *arg)
     chassis_config_t* conf = con->srv->config_manager;
 
     if (conf->options_update_flag) {
-        struct timeval check_interval = {0, 1000};
+        conf->retries++;
+        if (conf->retries == 0) {
+            network_mysqld_con_send_error(con->client, C("update remote sharding timeout"));
+            con->is_admin_waiting_resp = 0;
+            send_admin_resp(con->srv, con);
+            g_message("%s call admin_config_remote_sharding_callback over, wait:%d", G_STRLOC, conf->ms_timeout);
+            return;
+        }
+        conf->ms_timeout = conf->ms_timeout << 1;
+        int sec = conf->ms_timeout / 1000;
+        int usec = (conf->ms_timeout - 1000 * sec) * 1000;
+        struct timeval check_interval = {sec, usec};
         chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
+        g_message("%s call admin_config_remote_sharding_callback, timeout:%d", G_STRLOC, conf->ms_timeout);
         return;
     }
 
@@ -2111,6 +2191,8 @@ static void admin_config_remote_sharding(network_mysqld_con* con, chassis_config
 
     evtimer_set(&chas->remote_config_event, admin_config_remote_sharding_callback, con);
     struct timeval check_interval = {0, 2000};
+    conf->ms_timeout = 2;
+    conf->retries = 1;
     chassis_event_add_with_timeout(chas, &chas->remote_config_event, &check_interval);
 
     con->is_admin_waiting_resp = 1;
