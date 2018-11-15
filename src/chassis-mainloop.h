@@ -156,10 +156,11 @@ struct chassis {
     unsigned int enable_admin_listen:1;
     unsigned int is_need_to_create_conns:1;
 
-    int worker_processes;
-    int cpus;
     unsigned int min_req_time_for_cache;
     unsigned int long_query_time;
+    unsigned int internal_trx_isolation_level;
+    int cpus;
+    int worker_processes;
     int child_instant_exit_times;
 
     int cetus_max_allowed_packet;
@@ -221,6 +222,7 @@ struct chassis {
     guint invoke_dbg_on_crash;
     gint max_files_number;
     char *remote_config_url;
+    char *trx_isolation_level;
     gchar *default_file;
     gint print_version;
 
