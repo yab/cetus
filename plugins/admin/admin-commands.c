@@ -901,6 +901,18 @@ void admin_set_reduce_conns(network_mysqld_con* con, int mode)
     }
 }
 
+void admin_set_server_conn_refresh(network_mysqld_con* con)
+{
+    g_message("%s:call admin_set_server_conn_refresh", G_STRLOC);
+    if (con->is_admin_client) {
+        return;
+    }
+
+    con->srv->need_to_refresh_server_connections = 1;
+
+    network_mysqld_con_send_ok_full(con->client, 1, 0, 2, 0);
+}
+
 void admin_set_maintain(network_mysqld_con* con, int mode)
 {
     if (con->is_admin_client) {
@@ -1421,8 +1433,8 @@ void admin_get_stats(network_mysqld_con* con, char* p)
         }
     } else if (strcasecmp(p, "server_query_details") == 0) {
         int i = 0;
-        for (i; i < network_backends_count(chas->priv->backends)
-                 && i < MAX_SERVER_NUM; ++i) {
+        int  backends_num = network_backends_count(chas->priv->backends);
+        for (i; i < backends_num && i < MAX_SERVER_NUM; ++i) {
             GPtrArray* row = g_ptr_array_new_with_free_func(g_free);
             g_ptr_array_add(row, g_strdup(buffer));
             g_ptr_array_add(row, g_strdup_printf("server_query_details.%d.ro", i+1));
@@ -1971,6 +1983,7 @@ static struct sql_help_entry_t {
     {"delete allow_ip/deny_ip '<user>@<address>'", "delete address from white list of module", ALL_HELP},
     {"set reduce_conns (true|false)", "reduce idle connections if set to true", ALL_HELP},
     {"set maintain (true|false)", "close all client connections if set to true", ALL_HELP},
+    {"refresh conns", "refresh all server connections", ALL_HELP},
     {"show maintain status", "show maintain status", ALL_HELP},
     {"show status [like '%pattern%']", "show select/update/insert/delete statistics", ALL_HELP},
     {"show variables [like '%pattern%']", NULL, ALL_HELP},

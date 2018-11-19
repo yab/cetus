@@ -262,7 +262,10 @@ network_connection_pool_add(network_connection_pool *pool, network_socket *sock)
         g_hash_table_insert(pool->users, g_string_dup(sock->response->username), conns);
     }
 
+    entry->conns = conns;
+
     g_queue_push_head(conns, entry);
+    entry->link = conns->head;
 
     pool->cur_idle_connections++;
 
@@ -273,20 +276,11 @@ network_connection_pool_add(network_connection_pool *pool, network_socket *sock)
  * remove the connection referenced by entry from the pool 
  */
 void
-network_connection_pool_remove(network_connection_pool *pool, network_connection_pool_entry *entry)
+network_connection_pool_remove(network_connection_pool_entry *entry)
 {
-    network_socket *sock = entry->sock;
-    GQueue *conns;
-
-    if (NULL == (conns = g_hash_table_lookup(pool->users, sock->response->username))) {
-        return;
-    }
-
+    entry->pool->cur_idle_connections--;
+    g_queue_delete_link(entry->conns, entry->link);
     network_connection_pool_entry_free(entry, TRUE);
-
-    g_queue_remove(conns, entry);
-
-    pool->cur_idle_connections--;
 }
 
 gboolean

@@ -55,7 +55,7 @@ typedef struct chassis chassis;
 #define MAX_SERVER_NUM_FOR_PREPARE 32
 #define MAX_WORK_PROCESSES 64
 #define MAX_WORK_PROCESSES_SHIFT 6
-#define MAX_QUERY_TIME 1000
+#define MAX_QUERY_TIME 65536
 #define MAX_WAIT_TIME 1024
 #define MAX_TRY_NUM 6
 #define MAX_CREATE_CONN_NUM 512
@@ -159,6 +159,8 @@ struct chassis {
     unsigned int min_req_time_for_cache;
     unsigned int long_query_time;
     unsigned int internal_trx_isolation_level;
+    int need_to_refresh_server_connections;
+
     int cpus;
     int worker_processes;
     int child_instant_exit_times;
@@ -203,6 +205,7 @@ struct chassis {
     time_t startup_time;
     time_t child_exit_time;
     time_t current_time;
+    time_t server_conn_refresh_time;
     struct chassis_options_t *options;
     chassis_config_t *config_manager;
     GHashTable *query_cache_table;
