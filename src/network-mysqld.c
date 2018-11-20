@@ -4504,8 +4504,15 @@ network_mysqld_con_handle(int event_fd, short events, void *user_data)
         case ST_READ_QUERY:
             g_debug(G_STRLOC " %p con_handle -> ST_READ_QUERY", con);
 
-            if (events == EV_READ) {
+            if (events & EV_READ) {
                 CHECK_PENDING_EVENT(&(con->client->event));
+                if (events != EV_READ) {
+                    g_critical(G_STRLOC " events:%d, unexpected events", events);
+                }
+            } else if (events & EV_WRITE) {
+                g_critical(G_STRLOC "write events:%d, unexpected events", events);
+            } else if (events != EV_TIMEOUT) {
+                g_critical(G_STRLOC "not rw events:%d, unexpected events", events);
             }
 
             /* TODO If config is reloaded, close all current cons */
