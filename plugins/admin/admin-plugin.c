@@ -781,7 +781,7 @@ network_mysqld_admin_plugin_get_options(chassis_plugin_config *config)
     return opts.options;
 }
 
-#define MAX_CMD_OR_PATH_LEN 128
+#define MAX_CMD_OR_PATH_LEN 108
 static void remove_unix_socket_if_stale(chassis *chas)
 {
     char command[MAX_CMD_OR_PATH_LEN];
@@ -834,7 +834,11 @@ check_allowed_running(chassis *chas)
     memset(&un, 0, sizeof(un));
     un.sun_family = AF_UNIX;
     const char *name  = chas->unix_socket_name;
-    strncpy(un.sun_path, name, MAX_CMD_OR_PATH_LEN - 1);
+    if (strlen(name) >= sizeof(un.sun_path)) {
+        strncpy(un.sun_path, name, sizeof(un.sun_path) - 1);
+    } else {
+        strncpy(un.sun_path, name, strlen(name));
+    }
     int len = offsetof(struct sockaddr_un, sun_path) + strlen(name);
 
     if (bind(fd, (struct sockaddr *)&un, len) < 0) {
