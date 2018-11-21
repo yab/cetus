@@ -980,7 +980,7 @@ main_cmdline(int argc, char **argv)
     chassis_frontend_set_chassis_options(frontend, opts, srv);
 
     if (FALSE == chassis_options_parse_cmdline(opts, &argc, &argv, &gerr)) {
-        g_critical("%s", gerr->message);
+        g_critical("%s:%s", G_STRLOC, gerr->message);
         GOTO_EXIT(EXIT_FAILURE);
     }
 

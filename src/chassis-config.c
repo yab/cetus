@@ -158,7 +158,7 @@ chassis_config_get_mysql_connection(chassis_config_t *conf)
 
     g_debug("%s:call mysql_real_connect", G_STRLOC);
     if (mysql_real_connect(conn, conf->host, conf->user, conf->password, NULL, conf->port, NULL, 0) == NULL) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s:%s", G_STRLOC, mysql_error(conn));
         mysql_close(conn);
         return NULL;
     }
@@ -171,27 +171,27 @@ chassis_config_mysql_init_tables(chassis_config_t *conf)
 {
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
     if (!conn) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s: MySQL conn is nil", G_STRLOC);
         return FALSE;
     }
     char sql[256] = { 0 };
     snprintf(sql, sizeof(sql), "CREATE DATABASE IF NOT EXISTS %s", conf->schema);
     if (mysql_query(conn, sql)) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s:%s", G_STRLOC, mysql_error(conn));
         return FALSE;
     }
     snprintf(sql, sizeof(sql), "CREATE TABLE IF NOT EXISTS %s.objects("
              "object_name varchar(64) NOT NULL,"
              "object_value text NOT NULL," "mtime timestamp NOT NULL," "PRIMARY KEY(object_name))", conf->schema);
     if (mysql_query(conn, sql)) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s:%s", G_STRLOC, mysql_error(conn));
         return FALSE;
     }
     snprintf(sql, sizeof(sql), "CREATE TABLE IF NOT EXISTS %s.%s("
              "option_key varchar(64) NOT NULL,"
              "option_value varchar(1024) NOT NULL," "PRIMARY KEY(option_key))", conf->schema, conf->options_table);
     if (mysql_query(conn, sql)) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s:%s", G_STRLOC, mysql_error(conn));
         return FALSE;
     }
     return TRUE;
@@ -324,7 +324,7 @@ chassis_config_set_remote_options(chassis_config_t *conf, gchar* key, gchar* val
     if(conf->type == CHASSIS_CONF_MYSQL){
         MYSQL *conn = chassis_config_get_mysql_connection(conf);
         if (!conn) {
-            g_warning("Cannot connect to mysql server.");
+            g_warning("%s:Cannot connect to mysql server.", G_STRLOC);
             conf->options_update_flag = 0;
             conf->options_success_flag = 0;
             return FALSE;
@@ -420,7 +420,7 @@ chassis_config_mysql_query_object(chassis_config_t *conf,
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
 
     if (!conn) {
-        g_warning("Cannot connect to mysql server.");
+        g_warning("%s:Cannot connect to mysql server.", G_STRLOC);
         goto mysql_error;
     }
         
@@ -549,7 +549,7 @@ chassis_config_mysql_write_object(chassis_config_t *conf,
     gboolean status = TRUE;
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
     if (!conn) {
-        g_warning("Cannot connect to mysql server.");
+        g_warning("%s:Cannot connect to mysql server.", G_STRLOC);
         status = FALSE;
     }
     if (status == TRUE && mysql_query(conn, sql->str)) {
@@ -789,7 +789,7 @@ chassis_config_register_service(chassis_config_t *conf, char *id, char *data)
 
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
     if (!conn) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s: MySQL conn is nil", G_STRLOC);
         return FALSE;
     }
 
@@ -798,7 +798,7 @@ chassis_config_register_service(chassis_config_t *conf, char *id, char *data)
              "id varchar(64) NOT NULL,"
              "data varchar(64) NOT NULL," "start_time timestamp, PRIMARY KEY(id))", conf->schema);
     if (mysql_query(conn, sql)) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s:%s", G_STRLOC, mysql_error(conn));
         return FALSE;
     }
     time_t now = time(0);
@@ -806,7 +806,7 @@ chassis_config_register_service(chassis_config_t *conf, char *id, char *data)
              " VALUES('%s','%s',FROM_UNIXTIME(%ld)) ON DUPLICATE KEY UPDATE"
              " start_time=FROM_UNIXTIME(%ld)", conf->schema, id, data, now, now);
     if (mysql_query(conn, sql)) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s:%s", G_STRLOC, mysql_error(conn));
         return FALSE;
     }
     return TRUE;
@@ -820,14 +820,14 @@ chassis_config_unregister_service(chassis_config_t *conf, char *id)
 
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
     if (!conn) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s: MySQL conn is nil", G_STRLOC);
         return;
     }
 
     char sql[512] = { 0 };
     snprintf(sql, sizeof(sql), "DELETE FROM %s.services WHERE id='%s'", conf->schema, id);
     if (mysql_query(conn, sql)) {
-        g_critical("%s", mysql_error(conn));
+        g_critical("%s:%s", G_STRLOC, mysql_error(conn));
         return;
     }
 }
@@ -840,7 +840,7 @@ chassis_config_reload_variables(chassis_config_t *conf, const char *name)
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
 
     if (!conn) {
-        g_warning("Cannot connect to mysql server when reload variables");
+        g_warning("%s:Cannot connect to mysql server when reload variables.", G_STRLOC);
         goto mysql_error;
     }
     char sql[256] = { 0 };
