@@ -3704,8 +3704,10 @@ fast_analyze_stream(network_mysqld_con *con, network_socket *server, int *send_f
             } else {
                 con->last_payload_len = 0;
                 con->cur_resp_len += s->len;
-                g_debug("%s:continue here:%d for con:%p, packet_len:%d, s->len:%d", 
-                        G_STRLOC, con->last_payload_len, con, packet_len, (int) s->len);
+                con->analysis_next_pos+= packet_len;
+                g_debug("%s:continue here:%d for con:%p, packet_len:%d, s->len:%d, cur_resp_len:%d,analysis_next_pos:%d",
+                        G_STRLOC, con->last_payload_len, con, packet_len, (int) s->len,
+                        con->cur_resp_len, con->analysis_next_pos);
                 continue;
             }
             g_debug("%s:  packet len:%d, last_payload_len:%d, diff:%d for con:%p",
