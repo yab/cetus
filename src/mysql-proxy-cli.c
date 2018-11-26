@@ -187,6 +187,7 @@ chassis_frontend_new(void)
     frontend->xa_log_detailed = 0;
 
     frontend->default_pool_size = 10;
+    frontend->worker_processes = 1;
     frontend->max_resp_len = 10 * 1024 * 1024;  /* 10M */
     frontend->max_alive_time = DEFAULT_LIVE_TIME;
     frontend->merged_output_size = 8192;
@@ -659,7 +660,7 @@ init_parameters(struct chassis_frontend_t *frontend, chassis *srv)
 
 #if defined(SO_REUSEPORT)
     g_message("%s:SO_REUSEPORT is defined", G_STRLOC);
-    if (frontend->worker_processes < 1) {
+    if (frontend->worker_processes < 0) {
         srv->worker_processes = 1;
     } else if (frontend->worker_processes > MAX_WORK_PROCESSES) {
         srv->worker_processes = MAX_WORK_PROCESSES;
@@ -1153,6 +1154,7 @@ main_cmdline(int argc, char **argv)
     srv->daemon_mode = frontend->daemon_mode;
 
     if (srv->daemon_mode) {
+        g_message("%s:daemon mode", G_STRLOC);
         chassis_unix_daemonize();
     }
 

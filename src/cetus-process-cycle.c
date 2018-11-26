@@ -58,16 +58,28 @@ static cetus_cycle_t      cetus_exit_cycle;
 
 
 static int
-open_admin(cetus_cycle_t *cycle)
+open_plugins(cetus_cycle_t *cycle, int admin_only)
 {
     int      i;
 
+    g_message("%s: call open_plugins:%d", G_STRLOC, cycle->modules->len);
+
     for (i = 0; i < cycle->modules->len; i++) {
         chassis_plugin *p = cycle->modules->pdata[i];
-        if (strcmp(p->name, "admin") == 0) {
+        if (admin_only) {
+            g_message("%s: applying config of plugin %s", G_STRLOC, p->name);
+            if (strcmp(p->name, "admin") == 0) {
+                cycle->enable_admin_listen = 1;
+                g_assert(p->apply_config);
+                g_message("%s: call apply_config", G_STRLOC);
+                if (0 != p->apply_config(cycle, p->config)) {
+                    g_critical("%s: applying config of plugin %s failed", G_STRLOC, p->name);
+                    return -1;
+                }
+            }
+        } else {
             cycle->enable_admin_listen = 1;
-            g_assert(p->apply_config);
-            g_message("%s: call apply_config", G_STRLOC);
+            g_message("%s: applying config of plugin %s", G_STRLOC, p->name);
             if (0 != p->apply_config(cycle, p->config)) {
                 g_critical("%s: applying config of plugin %s failed", G_STRLOC, p->name);
                 return -1;
@@ -124,11 +136,17 @@ cetus_master_process_cycle(cetus_cycle_t *cycle)
 
     cycle->cpus = sysconf(_SC_NPROCESSORS_ONLN);
 
-    cetus_start_worker_processes(cycle, cycle->worker_processes,
-                               CETUS_PROCESS_RESPAWN);
+    if (cycle->worker_processes) {
+        cetus_start_worker_processes(cycle, cycle->worker_processes,
+                CETUS_PROCESS_RESPAWN);
 
-    if (open_admin(cycle) == -1) {
-        return;
+        if (open_plugins(cycle, 1) == -1) {
+            return;
+        }
+    } else {
+        if (open_plugins(cycle, 0) == -1) {
+            return;
+        }
     }
 
     if (cycle->pid_file) {
@@ -198,24 +216,32 @@ cetus_master_process_cycle(cetus_cycle_t *cycle)
         if (cetus_terminate) {
             if (live && try_cnt >= 10) {
                 try_cnt = 0;
-                cetus_signal_worker_processes(cycle,
-                        cetus_signal_value(CETUS_TERMINATE_SIGNAL));
+                if (cycle->worker_processes) {
+                    cetus_signal_worker_processes(cycle,
+                            cetus_signal_value(CETUS_TERMINATE_SIGNAL));
+                }
             }
             continue;
         }
 
         if (cetus_quit) {
-            cetus_signal_worker_processes(cycle,
-                                        cetus_signal_value(CETUS_SHUTDOWN_SIGNAL));
+            if (cycle->worker_processes) {
+                cetus_signal_worker_processes(cycle,
+                        cetus_signal_value(CETUS_SHUTDOWN_SIGNAL));
+            }
             live = 0;
             continue;
         }
 
         if (cetus_restart) {
             cetus_restart = 0;
-            cetus_start_worker_processes(cycle, cycle->worker_processes,
-                                       CETUS_PROCESS_RESPAWN);
-            open_admin(cycle);
+            if (cycle->worker_processes) {
+                cetus_start_worker_processes(cycle, cycle->worker_processes,
+                        CETUS_PROCESS_RESPAWN);
+                open_plugins(cycle, 1);
+            } else {
+                open_plugins(cycle, 0);
+            }
     
             live = 1;
         }
@@ -242,7 +268,9 @@ cetus_master_process_cycle(cetus_cycle_t *cycle)
                 p->stop_listening(cycle, p->config);
             }
 
-            cetus_signal_worker_processes(cycle, cetus_signal_value(CETUS_NOACCEPT_SIGNAL));
+            if (cycle->worker_processes) {
+                cetus_signal_worker_processes(cycle, cetus_signal_value(CETUS_NOACCEPT_SIGNAL));
+            }
         }
     }
 }

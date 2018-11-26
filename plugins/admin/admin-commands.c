@@ -72,7 +72,7 @@ void admin_clear_error(network_mysqld_con* con)
 }
 void admin_select_all_backends(network_mysqld_con* con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }
@@ -190,7 +190,7 @@ void admin_select_all_backends(network_mysqld_con* con)
 
 void admin_select_conn_details(network_mysqld_con *con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }
@@ -400,7 +400,7 @@ void admin_select_conn_details(network_mysqld_con *con)
 
 void admin_show_connectionlist(network_mysqld_con *con, int show_count)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }
@@ -710,7 +710,7 @@ void admin_show_connectionlist(network_mysqld_con *con, int show_count)
 
 void admin_acl_show_rules(network_mysqld_con *con, gboolean is_white)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->ask_one_worker = 1;
         con->admin_read_merge = 1;
         return;
@@ -736,7 +736,7 @@ void admin_acl_show_rules(network_mysqld_con *con, gboolean is_white)
 
 void admin_acl_add_rule(network_mysqld_con *con, gboolean is_white, char *addr)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -757,7 +757,7 @@ void admin_acl_add_rule(network_mysqld_con *con, gboolean is_white, char *addr)
 
 void admin_acl_delete_rule(network_mysqld_con *con, gboolean is_white, char *addr)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
     chassis *chas = con->srv;
@@ -802,7 +802,7 @@ static GList* admin_get_all_options(chassis* chas)
 
 void admin_show_variables(network_mysqld_con* con, const char* like)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->ask_one_worker = 1; 
         con->admin_read_merge = 1;
         return;
@@ -844,7 +844,7 @@ void admin_show_variables(network_mysqld_con* con, const char* like)
 
 void admin_show_status(network_mysqld_con* con, const char* like)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }
@@ -880,7 +880,7 @@ void admin_show_status(network_mysqld_con* con, const char* like)
 
 void admin_set_reduce_conns(network_mysqld_con* con, int mode)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -904,7 +904,7 @@ void admin_set_reduce_conns(network_mysqld_con* con, int mode)
 void admin_set_server_conn_refresh(network_mysqld_con* con)
 {
     g_message("%s:call admin_set_server_conn_refresh", G_STRLOC);
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -915,7 +915,7 @@ void admin_set_server_conn_refresh(network_mysqld_con* con)
 
 void admin_set_maintain(network_mysqld_con* con, int mode)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -929,7 +929,7 @@ void admin_set_maintain(network_mysqld_con* con, int mode)
 
 void admin_show_maintain(network_mysqld_con* con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }
@@ -972,7 +972,7 @@ void admin_select_version(network_mysqld_con* con)
 
 void admin_select_connection_stat(network_mysqld_con* con, int backend_ndx, char *user)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }
@@ -1025,7 +1025,7 @@ static enum cetus_pwd_type password_type(char* table)
 
 void admin_select_user_password(network_mysqld_con* con, char* from_table, char *user)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->ask_one_worker = 1;
         con->admin_read_merge = 1;
         return;
@@ -1142,7 +1142,7 @@ static void admin_update_or_delete_remote_user_password(network_mysqld_con* con,
 void admin_update_user_password(network_mysqld_con* con, char *from_table,
                                       char *user, char *password)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -1166,7 +1166,7 @@ void admin_update_user_password(network_mysqld_con* con, char *from_table,
 
 void admin_delete_user_password(network_mysqld_con* con, char* user)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -1215,7 +1215,7 @@ static backend_state_t backend_state(const char* str)
 
 void admin_insert_backend(network_mysqld_con* con, char *addr, char *type, char *state)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -1258,7 +1258,7 @@ void admin_insert_backend(network_mysqld_con* con, char *addr, char *type, char 
 void admin_update_backend(network_mysqld_con* con, GList* equations,
                           char *cond_key, char *cond_val)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -1330,7 +1330,7 @@ void admin_update_backend(network_mysqld_con* con, GList* equations,
 
 void admin_delete_backend(network_mysqld_con* con, char *key, char *val)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -1387,7 +1387,7 @@ void admin_get_stats(network_mysqld_con* con, char* p)
         return;
     }
     
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }
@@ -1473,7 +1473,7 @@ static void admin_supported_config(network_mysqld_con* con)
 
 void admin_get_config(network_mysqld_con* con, char* p)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }
@@ -1580,7 +1580,7 @@ static void admin_set_remote_config(network_mysqld_con* con, chassis_config_t *c
 
 void admin_set_config(network_mysqld_con* con, char* key, char* value)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -1850,7 +1850,7 @@ static void admin_reload_variables(network_mysqld_con* con, chassis_config_t *co
 
 void admin_config_reload(network_mysqld_con* con, char* object)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -1883,7 +1883,7 @@ void admin_config_reload(network_mysqld_con* con, char* object)
 
 void admin_kill_query(network_mysqld_con* con, guint32 thread_id)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->process_index = thread_id >> 24;
 
         if (con->process_index > cetus_last_process) {
@@ -1903,7 +1903,7 @@ void admin_kill_query(network_mysqld_con* con, guint32 thread_id)
 
 void admin_reset_stats(network_mysqld_con* con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -1915,7 +1915,7 @@ void admin_reset_stats(network_mysqld_con* con)
 
 void admin_select_all_groups(network_mysqld_con* con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->ask_one_worker = 1;
         con->admin_read_merge = 1;
         return;
@@ -2064,7 +2064,7 @@ static void get_module_names(chassis* chas, GString* plugin_names)
 
 void admin_send_overview(network_mysqld_con* con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }
@@ -2214,7 +2214,7 @@ static void admin_config_remote_sharding(network_mysqld_con* con, chassis_config
 void admin_create_vdb(network_mysqld_con* con, int id, GPtrArray* partitions,
                       enum sharding_method_t method, int key_type, int shard_num)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -2268,7 +2268,7 @@ void admin_create_vdb(network_mysqld_con* con, int id, GPtrArray* partitions,
 void admin_create_sharded_table(network_mysqld_con* con, const char* schema,
                                 const char* table, const char* key, int vdb_id)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -2294,7 +2294,7 @@ void admin_create_sharded_table(network_mysqld_con* con, const char* schema,
 
 void admin_select_vdb(network_mysqld_con* con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->ask_one_worker = 1;
         con->admin_read_merge = 1;
         return;
@@ -2329,7 +2329,7 @@ void admin_select_vdb(network_mysqld_con* con)
 
 void admin_select_sharded_table(network_mysqld_con* con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->ask_one_worker = 1;
         con->admin_read_merge = 1;
         return;
@@ -2440,7 +2440,7 @@ static void send_result(network_socket *client, gint ret, gint affected)
 
 void admin_save_settings(network_mysqld_con *con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->ask_one_worker = 1;
         return;
     }
@@ -2481,7 +2481,7 @@ void admin_show_databases(network_mysqld_con* con)
 void admin_create_single_table(network_mysqld_con* con, const char* schema,
                                const char* table, const char* group)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -2502,7 +2502,7 @@ void admin_create_single_table(network_mysqld_con* con, const char* schema,
 
 void admin_select_single_table(network_mysqld_con* con)
 {
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->ask_one_worker = 1;
         con->admin_read_merge = 1;
         return;
@@ -2532,7 +2532,7 @@ void admin_sql_log_start(network_mysqld_con* con) {
         return;
     }
     
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -2554,7 +2554,7 @@ void admin_sql_log_stop(network_mysqld_con* con) {
         return;
     }
     
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         return;
     }
 
@@ -2572,7 +2572,7 @@ void admin_sql_log_status(network_mysqld_con* con) {
         return;
     }
     
-    if (con->is_admin_client) {
+    if (con->is_processed_by_subordinate) {
         con->admin_read_merge = 1;
         return;
     }

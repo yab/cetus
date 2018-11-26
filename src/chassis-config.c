@@ -469,6 +469,9 @@ chassis_config_local_query_object(chassis_config_t *conf,
         }
         g_clear_error(&err);
         g_free(object_file);
+        if (buffer) {
+            g_free(buffer);
+        }
         return FALSE;
     }
 

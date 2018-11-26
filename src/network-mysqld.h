@@ -569,6 +569,7 @@ struct network_mysqld_con {
     unsigned int last_record_updated:1;
     unsigned int query_cache_judged:1;
     unsigned int is_client_compressed:1;
+    unsigned int is_processed_by_subordinate:1;
     unsigned int is_admin_client:1;
     unsigned int is_admin_waiting_resp:1;
     unsigned int direct_answer:1;

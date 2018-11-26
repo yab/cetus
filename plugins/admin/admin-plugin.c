@@ -508,7 +508,7 @@ static void visit_parser(network_mysqld_con *con, const char *sql)
         g_message("%s:syntax error", G_STRLOC);
         network_mysqld_con_send_error(con->client,
            C("syntax error, 'select help' for usage"));
-        if (con->is_admin_client) {
+        if (con->is_processed_by_subordinate) {
             con->direct_answer = 1;
         }
     }
@@ -565,6 +565,10 @@ static network_mysqld_stmt_ret admin_process_query(network_mysqld_con *con)
     con->admin_read_merge = 0;
 
     visit_parser(con, con->orig_sql->str);
+    if (con->srv->worker_processes == 0) {
+        con->direct_answer = 1;
+    }
+
     if (con->direct_answer) {
         return PROXY_SEND_RESULT;
     } else {
@@ -596,6 +600,12 @@ NETWORK_MYSQLD_PLUGIN_PROTO(server_read_query) {
     gettimeofday(&(con->req_recv_time), NULL);
 
     con->is_admin_client = 1;
+
+    if (con->srv->worker_processes == 0) {
+        con->is_processed_by_subordinate = 0;
+    } else {
+        con->is_processed_by_subordinate = 1;
+    }
     recv_sock = con->client;
 
     if (recv_sock->recv_queue->chunks->length != 1) {
