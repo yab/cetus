@@ -134,16 +134,11 @@ static MYSQL *
 chassis_config_get_mysql_connection(chassis_config_t *conf)
 {
     g_debug("%s:call chassis_config_get_mysql_connection", G_STRLOC);
-    /* TODO could not use cache connection */
-    conf->mysql_conn = NULL;
     /* first try the cached connection */
     if (conf->mysql_conn) {
-        if (mysql_ping(conf->mysql_conn) == 0) {
-            return conf->mysql_conn;
-        } else {
-            mysql_close(conf->mysql_conn);
-            conf->mysql_conn = NULL;
-        }
+        g_warning("%s:mysql conn was not closed", G_STRLOC);
+        mysql_close(conf->mysql_conn);
+        conf->mysql_conn = NULL;
     }
 
     g_debug("%s:call mysql_init", G_STRLOC);
@@ -174,27 +169,33 @@ chassis_config_mysql_init_tables(chassis_config_t *conf)
         g_critical("%s: MySQL conn is nil", G_STRLOC);
         return FALSE;
     }
+    gboolean status = FALSE;
     char sql[256] = { 0 };
     snprintf(sql, sizeof(sql), "CREATE DATABASE IF NOT EXISTS %s", conf->schema);
     if (mysql_query(conn, sql)) {
         g_critical("%s:%s", G_STRLOC, mysql_error(conn));
-        return FALSE;
+        goto recycle_mysql_resources;
     }
     snprintf(sql, sizeof(sql), "CREATE TABLE IF NOT EXISTS %s.objects("
              "object_name varchar(64) NOT NULL,"
              "object_value text NOT NULL," "mtime timestamp NOT NULL," "PRIMARY KEY(object_name))", conf->schema);
     if (mysql_query(conn, sql)) {
         g_critical("%s:%s", G_STRLOC, mysql_error(conn));
-        return FALSE;
+        goto recycle_mysql_resources;
     }
     snprintf(sql, sizeof(sql), "CREATE TABLE IF NOT EXISTS %s.%s("
              "option_key varchar(64) NOT NULL,"
              "option_value varchar(1024) NOT NULL," "PRIMARY KEY(option_key))", conf->schema, conf->options_table);
     if (mysql_query(conn, sql)) {
         g_critical("%s:%s", G_STRLOC, mysql_error(conn));
-        return FALSE;
+    } else {
+        status = TRUE;
     }
-    return TRUE;
+  
+recycle_mysql_resources:
+    mysql_close(conf->mysql_conn);
+    conf->mysql_conn = NULL;
+    return status;
 }
 
 chassis_config_t *
@@ -271,17 +272,18 @@ chassis_config_load_options_mysql(chassis_config_t *conf)
     MYSQL *conn = chassis_config_get_mysql_connection(conf);
     if (!conn) {
         g_warning("chassis_config can't get mysql conn");
-        goto mysql_error;
+        return FALSE;
     }
+    gboolean status = FALSE;
     char sql[1024] = { 0 };
     snprintf(sql, sizeof(sql), "SELECT option_key,option_value FROM %s.%s", conf->schema, conf->options_table);
     if (mysql_query(conn, sql)) {
         g_warning("sql failed: %s", sql);
-        goto mysql_error;
+        goto recycle_mysql_resources;
     }
     MYSQL_RES *result = mysql_store_result(conn);
     if (!result)
-        goto mysql_error;
+        goto recycle_mysql_resources;
 
     GHashTable *options;
     if (conf->options_index == 0) {
@@ -307,46 +309,61 @@ chassis_config_load_options_mysql(chassis_config_t *conf)
     }
     mysql_free_result(result);
 
-    conf->options_update_flag = 0;
-    conf->options_success_flag = 1;
-    return TRUE;
+    status = TRUE;
 
-  mysql_error:
-    conf->options_success_flag = 0;
-    conf->options_update_flag = 0;
-    return FALSE;
+recycle_mysql_resources:
+    if (status) {
+        conf->options_update_flag = 0;
+        conf->options_success_flag = 1;
+
+    } else {
+        conf->options_success_flag = 0;
+        conf->options_update_flag = 0;
+    }
+    mysql_close(conf->mysql_conn);
+    conf->mysql_conn = NULL;
+    return status;
 }
 
 
 gboolean
 chassis_config_set_remote_options(chassis_config_t *conf, gchar* key, gchar* value)
 {
-    if(conf->type == CHASSIS_CONF_MYSQL){
-        MYSQL *conn = chassis_config_get_mysql_connection(conf);
-        if (!conn) {
-            g_warning("%s:Cannot connect to mysql server.", G_STRLOC);
-            conf->options_update_flag = 0;
-            conf->options_success_flag = 0;
-            return FALSE;
-        }
-        gchar sql[1024] = { 0 }, real_value[1024] = { 0 };
-        mysql_real_escape_string(conn, real_value, value, strlen(value));
-        snprintf(sql, sizeof(sql),
-                "REPLACE INTO %s.`settings`(option_key,option_value) VALUES ('%s', '%s')", conf->schema, key, real_value);
-        if (mysql_query(conn, sql)) {
-            conf->options_update_flag = 0;
-            conf->options_success_flag = 0;
-            g_warning("sql failed: %s | error: %s", sql, mysql_error(conn));
-            return FALSE;
-        } else {
-            conf->options_update_flag = 0;
-            conf->options_success_flag = 1;
-        }
-    } else {
+    if(conf->type != CHASSIS_CONF_MYSQL){
+        return TRUE;
+    }
+
+    MYSQL *conn = chassis_config_get_mysql_connection(conf);
+    if (!conn) {
+        g_warning("%s:Cannot connect to mysql server.", G_STRLOC);
         conf->options_update_flag = 0;
         conf->options_success_flag = 0;
+        return FALSE;
     }
-    return TRUE;
+    gboolean status = FALSE;
+    gchar sql[1024] = { 0 }, real_value[1024] = { 0 };
+    mysql_real_escape_string(conn, real_value, value, strlen(value));
+    snprintf(sql, sizeof(sql),
+            "REPLACE INTO %s.`settings`(option_key,option_value) VALUES ('%s', '%s')", conf->schema, key, real_value);
+    if (mysql_query(conn, sql)) {
+        g_warning("sql failed: %s | error: %s", sql, mysql_error(conn));
+    } else {
+        status = TRUE;
+    }
+
+recycle_mysql_resources:
+    if (status) {
+        conf->options_update_flag = 0;
+        conf->options_success_flag = 1;
+
+    } else {
+        conf->options_success_flag = 0;
+        conf->options_update_flag = 0;
+    }
+    mysql_close(conf->mysql_conn);
+    conf->mysql_conn = NULL;
+
+    return status;
 }
 
 gint chassis_config_reload_options(chassis_config_t *conf)
@@ -421,20 +438,21 @@ chassis_config_mysql_query_object(chassis_config_t *conf,
 
     if (!conn) {
         g_warning("%s:Cannot connect to mysql server.", G_STRLOC);
-        goto mysql_error;
+        return FALSE;
     }
         
     g_debug("%s:reach mysql_query", G_STRLOC);
     char sql[256] = { 0 };
+    gboolean status = FALSE;
     snprintf(sql, sizeof(sql), "SELECT object_value,mtime FROM %s.objects where object_name='%s'", conf->schema, name);
     if (mysql_query(conn, sql)) {
         g_warning("sql failed: %s", sql);
-        goto mysql_error;
+        goto recycle_mysql_resources;
     }
     MYSQL_RES *result = mysql_store_result(conn);
     if (!result) { 
         g_debug("%s:reach mysql_store_result, result:%s", G_STRLOC, sql);
-        goto mysql_error;
+        goto recycle_mysql_resources;
     }
 
     MYSQL_ROW row;
@@ -442,16 +460,18 @@ chassis_config_mysql_query_object(chassis_config_t *conf,
     if (!row) {
         g_debug("%s:reach mysql_fetch_row", G_STRLOC);
         mysql_free_result(result);
-        goto mysql_error;
+        goto recycle_mysql_resources;
     }
 
     time_t mt = chassis_epoch_from_string(row[1], NULL);
 
     chassis_config_object_set_cache(object, row[0], mt);
     mysql_free_result(result);
-    return TRUE;
-  mysql_error:
-    return FALSE;
+    status = TRUE;
+recycle_mysql_resources:
+    mysql_close(conf->mysql_conn);
+    conf->mysql_conn = NULL;
+    return status;
 }
 
 static gboolean
@@ -544,26 +564,27 @@ chassis_config_mysql_write_object(chassis_config_t *conf,
                                   struct config_object_t *object, const char *name, const char *json)
 {
     g_assert(conf->type == CHASSIS_CONF_MYSQL);
+    MYSQL *conn = chassis_config_get_mysql_connection(conf);
+    if (!conn) {
+        g_warning("%s:Cannot connect to mysql server.", G_STRLOC);
+        return FALSE;
+    }
+
+    gboolean status = TRUE;
     time_t now = time(0);
     GString *sql = g_string_new(0);
     g_string_printf(sql, "REPLACE INTO %s.objects(object_name,object_value,mtime)"
                     " VALUES('%s','%s', FROM_UNIXTIME(%ld))", conf->schema, name, json, now);
 
-    gboolean status = TRUE;
-    MYSQL *conn = chassis_config_get_mysql_connection(conf);
-    if (!conn) {
-        g_warning("%s:Cannot connect to mysql server.", G_STRLOC);
-        status = FALSE;
-    }
-    if (status == TRUE && mysql_query(conn, sql->str)) {
+    if (mysql_query(conn, sql->str)) {
         g_warning("sql failed: %s", sql->str);
         status = FALSE;
-    }
-
-    if (status == TRUE) {
+    } else {
         chassis_config_object_set_cache(object, json, now);
     }
 
+    mysql_close(conf->mysql_conn);
+    conf->mysql_conn = NULL;
     g_string_free(sql, TRUE);
 
     conf->options_update_flag = 0;
@@ -709,20 +730,29 @@ chassis_config_mysql_is_object_outdated(chassis_config_t *conf, struct config_ob
         return FALSE;
     static char sql[128] = { 0 };
     snprintf(sql, sizeof(sql), "SELECT mtime FROM %s.objects where object_name='%s'", conf->schema, name);
+    gboolean status = FALSE;
     if (mysql_query(conn, sql)) {
         g_warning("sql failed: %s", sql);
-        return FALSE;
+        goto recycle_mysql_resources;
     }
     MYSQL_RES *result = mysql_store_result(conn);
     if (!result)
-        return FALSE;
+        goto recycle_mysql_resources;
     MYSQL_ROW row;
     row = mysql_fetch_row(result);
     if (!row)
-        return FALSE;
+        goto recycle_mysql_resources;
     time_t mt = chassis_epoch_from_string(row[0], NULL);
     mysql_free_result(result);
-    return object->mtime < mt;
+    status = TRUE;
+recycle_mysql_resources:
+    mysql_close(conf->mysql_conn);
+    conf->mysql_conn = NULL;
+    if (status) {
+        return object->mtime < mt;
+    } else {
+        return FALSE;
+    }
 }
 
 gboolean
@@ -796,13 +826,14 @@ chassis_config_register_service(chassis_config_t *conf, char *id, char *data)
         return FALSE;
     }
 
+    gboolean status = FALSE;
     char sql[512] = { 0 };
     snprintf(sql, sizeof(sql), "CREATE TABLE IF NOT EXISTS %s.services("
              "id varchar(64) NOT NULL,"
              "data varchar(64) NOT NULL," "start_time timestamp, PRIMARY KEY(id))", conf->schema);
     if (mysql_query(conn, sql)) {
         g_critical("%s:%s", G_STRLOC, mysql_error(conn));
-        return FALSE;
+        goto recycle_mysql_resources;
     }
     time_t now = time(0);
     snprintf(sql, sizeof(sql), "INSERT INTO %s.services(id, data, start_time)"
@@ -810,9 +841,14 @@ chassis_config_register_service(chassis_config_t *conf, char *id, char *data)
              " start_time=FROM_UNIXTIME(%ld)", conf->schema, id, data, now, now);
     if (mysql_query(conn, sql)) {
         g_critical("%s:%s", G_STRLOC, mysql_error(conn));
-        return FALSE;
+        goto recycle_mysql_resources;
     }
-    return TRUE;
+
+    status = TRUE;
+recycle_mysql_resources:
+    mysql_close(conf->mysql_conn);
+    conf->mysql_conn = NULL;
+    return status;
 }
 
 void
@@ -831,8 +867,10 @@ chassis_config_unregister_service(chassis_config_t *conf, char *id)
     snprintf(sql, sizeof(sql), "DELETE FROM %s.services WHERE id='%s'", conf->schema, id);
     if (mysql_query(conn, sql)) {
         g_critical("%s:%s", G_STRLOC, mysql_error(conn));
-        return;
     }
+
+    mysql_close(conf->mysql_conn);
+    conf->mysql_conn = NULL;
 }
 
 gboolean
@@ -844,18 +882,18 @@ chassis_config_reload_variables(chassis_config_t *conf, const char *name)
 
     if (!conn) {
         g_warning("%s:Cannot connect to mysql server when reload variables.", G_STRLOC);
-        goto mysql_error;
+        return FALSE;
     }
     char sql[256] = { 0 };
     snprintf(sql, sizeof(sql), "SELECT object_value,mtime FROM %s.objects where object_name='%s'", conf->schema, name);
     if (mysql_query(conn, sql)) {
         g_warning("sql failed: %s, when reload variables, mysql_errno: %d", sql, mysql_errno(conn));
-        goto mysql_error;
+        goto recycle_mysql_resources;
     }
     MYSQL_RES *result = mysql_store_result(conn);
     if (!result) {
         g_debug("%s:call mysql_store_result nil", G_STRLOC);
-        goto mysql_error;
+        goto recycle_mysql_resources;
     }
 
     MYSQL_ROW row;
@@ -863,7 +901,7 @@ chassis_config_reload_variables(chassis_config_t *conf, const char *name)
     if (!row) {
         g_debug("%s:call mysql_fetch_row nil", G_STRLOC);
         mysql_free_result(result);
-        goto mysql_error;
+        goto recycle_mysql_resources;
     }
 
     time_t mt = chassis_epoch_from_string(row[1], NULL);
@@ -872,17 +910,21 @@ chassis_config_reload_variables(chassis_config_t *conf, const char *name)
     if (!object) {
         mysql_free_result(result);
         g_debug("call chassis_config_get_object nil");
-        goto mysql_error;
+        goto recycle_mysql_resources;
     }
     chassis_config_object_set_cache(object, row[0], mt);
     mysql_free_result(result);
     status = TRUE;
-    conf->options_update_flag = 0;
-    conf->options_success_flag = 1;
-    g_debug("call chassis_config_reload_variables success");
-mysql_error:
-    conf->options_update_flag = 0;
-    conf->options_success_flag = 0;
-    g_debug("call chassis_config_reload_variables failure");
+
+recycle_mysql_resources:
+    if (status) {
+        conf->options_update_flag = 0;
+        conf->options_success_flag = 1;
+    } else {
+        conf->options_update_flag = 0;
+        conf->options_success_flag = 0;
+    }
+    mysql_close(conf->mysql_conn);
+    conf->mysql_conn = NULL;
     return status;
 }
