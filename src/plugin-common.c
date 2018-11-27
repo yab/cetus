@@ -229,8 +229,10 @@ do_read_auth(network_mysqld_con *con)
         g_free(ip_err_msg);
         g_strfreev(client_addr_arr);
         con->state = ST_SEND_ERROR;
+        g_strfreev(client_addr_arr);
         return NETWORK_SOCKET_SUCCESS;
     }
+    g_strfreev(client_addr_arr);
 
     g_strfreev(client_addr_arr);
 
